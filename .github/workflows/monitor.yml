@@ -2,7 +2,7 @@ name: YouTube Tracker
 
 on:
   workflow_dispatch:
-  
+
   schedule:
     - cron: "*/15 * * * *"
 
@@ -26,3 +26,14 @@ jobs:
 
       - name: Run Bot
         run: python main.py
+
+      - name: Commit Updated Database
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          git add youtube.db videos.xlsx
+
+          git commit -m "updated database" || echo "No changes"
+
+          git push
