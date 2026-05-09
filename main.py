@@ -25,25 +25,41 @@ GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwzkOaWKj5HSQzdzpWk
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 
 # ==========================================
-# IST TIME FORMAT
+# IST TIMEZONE
 # ==========================================
 
 IST = pytz.timezone("Asia/Kolkata")
 
-def get_ist_time():
+# ==========================================
+# FORMAT YOUTUBE DATE
+# ==========================================
 
-    now = datetime.now(IST)
+def format_youtube_date(upload_date):
 
-    return now.strftime("%d %B %Y %I:%M %p IST")
+    try:
+
+        dt = datetime.strptime(upload_date, "%Y%m%d")
+
+        dt_ist = IST.localize(dt)
+
+        return dt_ist.strftime("%d %B %Y %I:%M %p IST")
+
+    except:
+
+        return "Unknown"
 
 # ==========================================
-# FETCH YOUTUBE VIDEOS
+# YOUTUBE OPTIONS
 # ==========================================
 
 ydl_opts = {
     "quiet": True,
     "extract_flat": True
 }
+
+# ==========================================
+# FETCH YOUTUBE DATA
+# ==========================================
 
 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
@@ -59,62 +75,74 @@ with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
     existing_data = response.text
 
+    # ==========================================
+    # LOOP THROUGH VIDEOS
+    # ==========================================
+
     for video in info["entries"]:
 
-        title = video["title"]
+        try:
 
-        video_id = video["id"]
+            title = video.get("title", "Unknown Title")
 
-        url = f"https://youtube.com/watch?v={video_id}"
+            video_id = video.get("id", "")
 
-        current_video_ids.append(video_id)
+            upload_date_raw = video.get("release_date")
 
-        # ==========================================
-        # ONLY SEND NEW VIDEO ALERTS
-        # ==========================================
+            upload_time = format_youtube_date(upload_date_raw)
 
-        if video_id not in existing_data:
+            url = f"https://youtube.com/watch?v={video_id}"
 
-            upload_time = get_ist_time()
+            current_video_ids.append(video_id)
 
             # ==========================================
-            # SEND TO GOOGLE SHEETS
+            # ONLY NEW VIDEOS
             # ==========================================
 
-            requests.post(
-                GOOGLE_SCRIPT_URL,
-                json={
-                    "type": "new_video",
-                    "title": title,
-                    "upload_time": upload_time,
-                    "video_id": video_id,
-                    "url": url
-                }
-            )
+            if video_id not in existing_data:
 
-            # ==========================================
-            # SEND TELEGRAM ALERT
-            # ==========================================
+                # ==========================================
+                # SEND TO GOOGLE SHEETS
+                # ==========================================
 
-            message = f"""
+                requests.post(
+                    GOOGLE_SCRIPT_URL,
+                    json={
+                        "type": "new_video",
+                        "title": title,
+                        "upload_time": upload_time,
+                        "video_id": video_id,
+                        "url": url
+                    }
+                )
+
+                # ==========================================
+                # TELEGRAM MESSAGE
+                # ==========================================
+
+                message = f"""
 NEW VIDEO UPLOADED
 
 Title:
 {title}
 
-Upload Time:
+Original Upload Date:
 {upload_time}
 
 URL:
 {url}
 """
 
-            requests.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                data={
-                    "chat_id": CHAT_ID,
-                    "text": message
-                }
-            )
+                requests.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    data={
+                        "chat_id": CHAT_ID,
+                        "text": message
+                    }
+                )
+
+        except Exception as e:
+
+            print("ERROR:", e)
 
 print("BOT COMPLETED SUCCESSFULLY")

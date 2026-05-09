@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Libraries
+      - name: Install Dependencies
         run: |
           pip install yt-dlp requests pytz
 
