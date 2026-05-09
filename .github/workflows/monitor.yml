@@ -1,0 +1,26 @@
+name: YouTube Tracker
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install Libraries
+        run: |
+          pip install yt-dlp pandas openpyxl requests
+
+      - name: Run Bot
+        run: python main.py
