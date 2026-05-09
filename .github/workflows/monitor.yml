@@ -22,18 +22,7 @@ jobs:
 
       - name: Install Libraries
         run: |
-          pip install yt-dlp pandas openpyxl requests
+          pip install yt-dlp requests pytz
 
       - name: Run Bot
         run: python main.py
-
-      - name: Commit Updated Database
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
-          git add youtube.db videos.xlsx
-
-          git commit -m "updated database" || echo "No changes"
-
-          git push

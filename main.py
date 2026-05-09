@@ -1,8 +1,22 @@
 import yt_dlp
-import sqlite3
-import pandas as pd
 import requests
+import pytz
+
 from datetime import datetime
+
+# ==========================================
+# TELEGRAM SETTINGS
+# ==========================================
+
+BOT_TOKEN = "7936950774:AAFGpnQoPEICWNJlKnzPH33Fw-XWMel3y8s"
+
+CHAT_ID = "765673702"
+
+# ==========================================
+# GOOGLE APPS SCRIPT URL
+# ==========================================
+
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwzkOaWKj5HSQzdzpWkLEkssnEUbco5kq4dNjCvJJ6tVlXvKrasnQrtbfssVXcQcKw/exec"
 
 # ==========================================
 # YOUTUBE CHANNEL
@@ -11,39 +25,24 @@ from datetime import datetime
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 
 # ==========================================
-# TELEGRAM BOT SETTINGS
+# IST TIME FORMAT
 # ==========================================
 
-BOT_TOKEN = "7936950774:AAFGpnQoPEICWNJlKnzPH33Fw-XWMel3y8s"
-CHAT_ID = "765673702"
+IST = pytz.timezone("Asia/Kolkata")
 
-# ==========================================
-# DATABASE SETUP
-# ==========================================
+def get_ist_time():
 
-conn = sqlite3.connect("youtube.db")
-cursor = conn.cursor()
+    now = datetime.now(IST)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS videos (
-    video_id TEXT PRIMARY KEY,
-    title TEXT,
-    url TEXT,
-    upload_time TEXT,
-    status TEXT,
-    deleted_time TEXT
-)
-""")
-
-conn.commit()
+    return now.strftime("%d %B %Y %I:%M %p IST")
 
 # ==========================================
 # FETCH YOUTUBE VIDEOS
 # ==========================================
 
 ydl_opts = {
-    'quiet': True,
-    'extract_flat': True
+    "quiet": True,
+    "extract_flat": True
 }
 
 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -52,66 +51,62 @@ with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
     current_video_ids = []
 
-    for video in info['entries']:
+    # ==========================================
+    # FETCH EXISTING SHEET DATA
+    # ==========================================
 
-        video_id = video['id']
-        title = video['title']
+    response = requests.get(GOOGLE_SCRIPT_URL)
+
+    existing_data = response.text
+
+    for video in info["entries"]:
+
+        title = video["title"]
+
+        video_id = video["id"]
 
         url = f"https://youtube.com/watch?v={video_id}"
 
         current_video_ids.append(video_id)
 
-        # CHECK IF VIDEO EXISTS
-        cursor.execute(
-            "SELECT * FROM videos WHERE video_id=?",
-            (video_id,)
-        )
-
-        existing_video = cursor.fetchone()
-
         # ==========================================
-        # NEW VIDEO DETECTED
+        # ONLY SEND NEW VIDEO ALERTS
         # ==========================================
 
-        if not existing_video:
+        if video_id not in existing_data:
 
-            upload_time = str(datetime.now())
+            upload_time = get_ist_time()
 
-            cursor.execute("""
-            INSERT INTO videos (
-                video_id,
-                title,
-                url,
-                upload_time,
-                status,
-                deleted_time
+            # ==========================================
+            # SEND TO GOOGLE SHEETS
+            # ==========================================
+
+            requests.post(
+                GOOGLE_SCRIPT_URL,
+                json={
+                    "type": "new_video",
+                    "title": title,
+                    "upload_time": upload_time,
+                    "video_id": video_id,
+                    "url": url
+                }
             )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                video_id,
-                title,
-                url,
-                upload_time,
-                "Active",
-                ""
-            ))
 
-            conn.commit()
-
-            print(f"NEW VIDEO: {title}")
-
+            # ==========================================
             # SEND TELEGRAM ALERT
+            # ==========================================
+
             message = f"""
 NEW VIDEO UPLOADED
 
 Title:
 {title}
 
+Upload Time:
+{upload_time}
+
 URL:
 {url}
-
-Uploaded At:
-{upload_time}
 """
 
             requests.post(
@@ -122,72 +117,4 @@ Uploaded At:
                 }
             )
 
-# ==========================================
-# CHECK DELETED VIDEOS
-# ==========================================
-
-cursor.execute("""
-SELECT video_id, title
-FROM videos
-WHERE status='Active'
-""")
-
-saved_videos = cursor.fetchall()
-
-for saved_video in saved_videos:
-
-    saved_video_id = saved_video[0]
-    saved_title = saved_video[1]
-
-    if saved_video_id not in current_video_ids:
-
-        deleted_time = str(datetime.now())
-
-        cursor.execute("""
-        UPDATE videos
-        SET status=?,
-            deleted_time=?
-        WHERE video_id=?
-        """, (
-            "Deleted",
-            deleted_time,
-            saved_video_id
-        ))
-
-        conn.commit()
-
-        print(f"DELETED VIDEO: {saved_title}")
-
-        # SEND TELEGRAM DELETE ALERT
-        message = f"""
-VIDEO DELETED
-
-Title:
-{saved_title}
-
-Deleted At:
-{deleted_time}
-"""
-
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": message
-            }
-        )
-
-# ==========================================
-# EXPORT DATABASE TO EXCEL
-# ==========================================
-
-df = pd.read_sql_query(
-    "SELECT * FROM videos",
-    conn
-)
-
-df.to_excel("videos.xlsx", index=False)
-
 print("BOT COMPLETED SUCCESSFULLY")
-
-conn.close()
