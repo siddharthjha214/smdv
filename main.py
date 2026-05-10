@@ -2,12 +2,13 @@ import yt_dlp
 import requests
 import pytz
 from datetime import datetime
+import os
 
 # ==========================================
 # SETTINGS
 # ==========================================
 
-BOT_TOKEN = "7936950774:AAFGpnQoPEICWNJlKnzPH33Fw-XWMel3y8s"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzKtlIvMXCLQQV0LvAbeNKfhoW8LzTfbwSjcn7MhQQHXUHXhcBWAhY5Cu06ujJDPe7T/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
