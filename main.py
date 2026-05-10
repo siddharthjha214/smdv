@@ -9,7 +9,7 @@ from datetime import datetime
 
 BOT_TOKEN = "7936950774:AAFGpnQoPEICWNJlKnzPH33Fw-XWMel3y8s"
 CHAT_ID = "765673702"
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx_nyievBODXN0WBUWL47YObNTspjPcWMTJ-iZFh3dgTKgZ77Ca__Q69fN44Bj1Y90-/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzKtlIvMXCLQQV0LvAbeNKfhoW8LzTfbwSjcn7MhQQHXUHXhcBWAhY5Cu06ujJDPe7T/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 
 IST = pytz.timezone("Asia/Kolkata")
