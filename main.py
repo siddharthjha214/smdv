@@ -3,6 +3,9 @@ import requests
 import pytz
 from datetime import datetime
 import os
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 # ==========================================
 # SETTINGS
@@ -46,6 +49,61 @@ def format_youtube_date(upload_date):
 
 def get_current_time():
     return datetime.now(pytz.utc).astimezone(IST).strftime("%d %B %Y %I:%M %p IST")
+
+# ==========================================
+# UPLOAD TO YOUTUBE
+# ==========================================
+
+def upload_video_to_youtube(file_path, title):
+    print(f"Uploading {file_path} to YouTube backup channel...")
+    try:
+        client_id = os.getenv("YOUTUBE_CLIENT_ID")
+        client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+        refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+
+        if not all([client_id, client_secret, refresh_token]):
+            print("ERROR: YouTube API secrets are missing from environment.")
+            return
+
+        credentials = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret
+        )
+
+        youtube = build("youtube", "v3", credentials=credentials)
+
+        body = {
+            "snippet": {
+                "title": title[:100],  # YouTube titles max 100 chars
+                "description": "Automated Backup Video",
+                "categoryId": "22"
+            },
+            "status": {
+                "privacyStatus": "private"
+            }
+        }
+
+        media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
+
+        request = youtube.videos().insert(
+            part=",".join(body.keys()),
+            body=body,
+            media_body=media
+        )
+        
+        response = None
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                print(f"Uploaded {int(status.progress() * 100)}%")
+
+        print(f"Upload Complete! Backup Video ID: {response.get('id')}")
+
+    except Exception as e:
+        print(f"CRITICAL ERROR during video upload: {e}")
 
 # ==========================================
 # YOUTUBE OPTIONS
@@ -119,15 +177,42 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                     }
                 )
 
-                # Telegram Notification (prevent spam on initial GitHub Action run)
+                # Telegram Notification & Auto-Backup (prevent spam on initial run)
                 if not is_first_run:
                     message = f"🚨 NEW VIDEO UPLOADED 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
                     requests.post(
                         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                         data={"chat_id": CHAT_ID, "text": message}
                     )
+                    
+                    # ------------------------------------------
+                    # START AUTOMATED BACKUP
+                    # ------------------------------------------
+                    print("Downloading new video via yt-dlp...")
+                    temp_filename = f"temp_video_{video_id}.mp4"
+                    ydl_download_opts = {
+                        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                        "merge_output_format": "mp4",
+                        "outtmpl": temp_filename,
+                        "quiet": True
+                    }
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
+                            ydl_dl.download([url])
+                        
+                        # Upload to private channel
+                        upload_video_to_youtube(temp_filename, title)
+                        
+                        # Cleanup local file to save runner disk space
+                        if os.path.exists(temp_filename):
+                            os.remove(temp_filename)
+                            print(f"Deleted local file {temp_filename} to free up space.")
+                            
+                    except Exception as backup_error:
+                        print(f"Failed to backup video: {backup_error}")
+                        
                 else:
-                    print("(Skipped Telegram notification because this is the first initial setup run)")
+                    print("(Skipped Telegram notification & Backup because this is the first initial setup run)")
 
         except Exception as e:
             print("ERROR on video parsing:", e)
