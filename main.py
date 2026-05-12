@@ -133,7 +133,6 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
 ydl_opts_fast = {
     "quiet": True,
     "extract_flat": "in_playlist",
-    "remote_components": ["ejs:github"],
     "extractor_args": {"youtube": ["player_client=android,web"]}
 }
 if os.path.exists("cookies.txt"):
@@ -148,7 +147,6 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
-        "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": ["player_client=android,web"]}
     }
     if os.path.exists("cookies.txt"):
