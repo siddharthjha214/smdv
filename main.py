@@ -174,8 +174,8 @@ def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
     temp_base = f"temp_video_{video_id}"
     ydl_download_opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "merge_output_format": "mp4",
+        "format": "bestvideo+bestaudio/best",   # No format restrictions — gets 4K/VP9 if available
+        "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
