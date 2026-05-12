@@ -112,13 +112,20 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
         if thumbnail_path and uploaded_video_id:
             print(f"Uploading thumbnail {thumbnail_path}...")
             try:
+                # Convert webp to jpg if needed (YouTube API doesn't accept webp)
+                if thumbnail_path.endswith(".webp"):
+                    jpg_path = thumbnail_path.replace(".webp", ".jpg")
+                    import subprocess
+                    subprocess.run(["ffmpeg", "-y", "-i", thumbnail_path, jpg_path], check=True, capture_output=True)
+                    thumbnail_path = jpg_path
                 youtube.thumbnails().set(
                     videoId=uploaded_video_id,
-                    media_body=MediaFileUpload(thumbnail_path)
+                    media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
                 ).execute()
                 print("Thumbnail uploaded successfully!")
             except Exception as thumb_err:
                 print(f"Failed to upload thumbnail: {thumb_err}")
+
                 
         return True
 
@@ -133,6 +140,7 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
 ydl_opts_fast = {
     "quiet": True,
     "extract_flat": "in_playlist",
+    "remote_components": ["ejs:npm"],
     "extractor_args": {"youtube": ["player_client=android,web"]}
 }
 if os.path.exists("cookies.txt"):
@@ -147,6 +155,7 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
+        "remote_components": ["ejs:npm"],
         "extractor_args": {"youtube": ["player_client=android,web"]}
     }
     if os.path.exists("cookies.txt"):
