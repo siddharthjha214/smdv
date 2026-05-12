@@ -133,6 +133,30 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
         print(f"CRITICAL ERROR during video upload: {e}")
         return False
 
+def update_backup_in_sheet(video_id, today_date, retries=3):
+    """Update Google Sheets backup status with retry logic."""
+    for attempt in range(retries):
+        try:
+            resp = requests.post(
+                GOOGLE_SCRIPT_URL,
+                json={
+                    "type": "update_backup",
+                    "video_id": video_id,
+                    "backup_status": "Backed Up",
+                    "backup_date": today_date
+                },
+                timeout=15
+            )
+            if resp.status_code == 200:
+                print(f"Sheet updated: {video_id} marked as Backed Up.")
+                return True
+            else:
+                print(f"Sheet update attempt {attempt+1} failed: HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"Sheet update attempt {attempt+1} error: {e}")
+    print(f"WARNING: Failed to update sheet for {video_id} after {retries} attempts!")
+    return False
+
 # ==========================================
 # YOUTUBE OPTIONS
 # ==========================================
@@ -203,6 +227,7 @@ except Exception as e:
 
 is_first_run = len(db_active_videos) == 0
 today_date = get_current_date()
+backed_up_this_run = set()  # Track videos backed up this run to prevent duplicates
 
 # Count quota used today
 quota_used = 0
@@ -280,22 +305,14 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                             data={"chat_id": CHAT_ID, "text": message}
                         )
                     
-                    if quota_used < DAILY_UPLOAD_QUOTA:
+                    if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
                         print("Prioritizing new video for backup...")
                         success = download_and_backup(video_id, url, title)
                         if success:
-                            # Update sheet with backup status
-                            requests.post(
-                                GOOGLE_SCRIPT_URL,
-                                json={
-                                    "type": "update_backup",
-                                    "video_id": video_id,
-                                    "backup_status": "Backed Up",
-                                    "backup_date": today_date
-                                }
-                            )
+                            update_backup_in_sheet(video_id, today_date)
                             db_active_videos[video_id]["backup_status"] = "Backed Up"
                             db_active_videos[video_id]["backup_date"] = today_date
+                            backed_up_this_run.add(video_id)
                             quota_used += 1
                             new_video_processed = True
                     else:
@@ -307,28 +324,19 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
             print("ERROR on video parsing:", e)
 
     # ==========================================
-    # PRIORITY #2: BACKLOG DOWNLOADS
+    # PRIORITY #2: BACKLOG DOWNLOADS (oldest first — 2012 → present)
     # ==========================================
     if not is_first_run and not new_video_processed and quota_used < DAILY_BACKLOG_QUOTA:
-        print("Checking for backlog videos to backup...")
+        print("Checking for backlog videos to backup (oldest first)...")
         
-        # STEP A: Check the 10 newest videos on the channel FIRST.
-        # This handles the edge case where a new video was uploaded yesterday 
-        # but the quota was full, so it got skipped. It must take priority over 2012 videos!
+        # Go through ALL videos oldest→newest (YouTube returns newest first, so we reverse)
         pending_video_to_backup = None
-        for video_id in current_channel_ids[:10]:
-            if db_active_videos.get(video_id, {}).get("backup_status") != "Backed Up":
-                print(f"Found recent pending video for backup: {video_id}")
+        for video_id in reversed(current_channel_ids):
+            vid_data = db_active_videos.get(video_id, {})
+            if vid_data.get("backup_status") != "Backed Up" and video_id not in backed_up_this_run:
+                print(f"Found oldest pending video for backup: {video_id} — {vid_data.get('title', '')}")
                 pending_video_to_backup = video_id
                 break
-                
-        # STEP B: If no recent videos are pending, process the oldest historical video
-        if not pending_video_to_backup:
-            for video_id in reversed(current_channel_ids):
-                if db_active_videos.get(video_id, {}).get("backup_status") != "Backed Up":
-                    print(f"Found oldest historical pending video for backup: {video_id}")
-                    pending_video_to_backup = video_id
-                    break
         
         if pending_video_to_backup:
             video_id = pending_video_to_backup
@@ -338,21 +346,15 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
             
             success = download_and_backup(video_id, url, title)
             if success:
-                # Update sheet
-                requests.post(
-                    GOOGLE_SCRIPT_URL,
-                    json={
-                        "type": "update_backup",
-                        "video_id": video_id,
-                        "backup_status": "Backed Up",
-                        "backup_date": today_date
-                    }
-                )
+                update_backup_in_sheet(video_id, today_date)
+                backed_up_this_run.add(video_id)
                 quota_used += 1
-                
-            # We only process ONE backlog video per run to prevent GitHub Actions timeout!
+        else:
+            print("No pending backlog videos found.")
+            
+        # We only process ONE backlog video per run to prevent GitHub Actions timeout!
     elif quota_used >= DAILY_BACKLOG_QUOTA:
-        print(f"Daily backlog quota limit of {DAILY_BACKLOG_QUOTA} reached. Reserving remaining quota for new videos.")
+        print(f"Daily backlog quota of {DAILY_BACKLOG_QUOTA} reached. Reserved 1 slot for new videos today.")
 
     # ==========================================
     # 3. CHECK FOR DELETED OR PRIVATE VIDEOS
