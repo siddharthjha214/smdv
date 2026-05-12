@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Setup FFmpeg
-        uses: mwader/setup-ffmpeg@v3
+        uses: federicocarboni/setup-ffmpeg@v3
 
       - name: Install Python Dependencies
         run: |
