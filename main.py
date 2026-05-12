@@ -135,6 +135,8 @@ ydl_opts_fast = {
     "extract_flat": "in_playlist",
     "remote_components": ["ejs:github"]
 }
+if os.path.exists("cookies.txt"):
+    ydl_opts_fast["cookiefile"] = "cookies.txt"
 
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
@@ -146,6 +148,8 @@ def download_and_backup(video_id, url, title):
         "quiet": True,
         "writethumbnail": True
     }
+    if os.path.exists("cookies.txt"):
+        ydl_download_opts["cookiefile"] = "cookies.txt"
     try:
         with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
             ydl_dl.download([url])
