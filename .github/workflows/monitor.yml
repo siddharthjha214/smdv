@@ -21,16 +21,16 @@ jobs:
           python-version: "3.11"
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: Setup FFmpeg
         uses: federicocarboni/setup-ffmpeg@v3
 
       - name: Install Python Dependencies
         run: |
-          pip install -U yt-dlp yt-dlp-ejs requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install -U "yt-dlp[default]" requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Run Bot
         env:
