@@ -227,7 +227,12 @@ except Exception as e:
 
 is_first_run = len(db_active_videos) == 0
 today_date = get_current_date()
-backed_up_this_run = set()  # Track videos backed up this run to prevent duplicates
+
+# Seed backed_up_this_run from sheet so cross-run duplicates are caught immediately
+backed_up_this_run = set(
+    vid for vid, data in db_active_videos.items()
+    if data.get("backup_status") == "Backed Up"
+)
 
 # Count quota used today
 quota_used = 0
@@ -236,6 +241,7 @@ for vid, data in db_active_videos.items():
         quota_used += 1
 
 print(f"Daily Quota Used: {quota_used}/{DAILY_UPLOAD_QUOTA}")
+print(f"Already backed up (all time): {len(backed_up_this_run)} videos — will not re-upload these.")
 
 # ==========================================
 # 2. FETCH YOUTUBE DATA
@@ -305,16 +311,24 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                             data={"chat_id": CHAT_ID, "text": message}
                         )
                     
+                    # ⚠️ DUPLICATE GUARD: Only upload if NOT already backed up in the sheet
                     if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
                         print("Prioritizing new video for backup...")
                         success = download_and_backup(video_id, url, title)
                         if success:
-                            update_backup_in_sheet(video_id, today_date)
+                            sheet_updated = update_backup_in_sheet(video_id, today_date)
+                            if not sheet_updated:
+                                print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
+                                update_backup_in_sheet(video_id, today_date)  # One extra retry
                             db_active_videos[video_id]["backup_status"] = "Backed Up"
                             db_active_videos[video_id]["backup_date"] = today_date
                             backed_up_this_run.add(video_id)
                             quota_used += 1
                             new_video_processed = True
+                        else:
+                            print(f"Download/upload failed for {video_id}. Will retry next run.")
+                    elif video_id in backed_up_this_run:
+                        print(f"SKIPPED: {video_id} is already marked as Backed Up in the sheet — preventing duplicate upload.")
                     else:
                         print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup new video tomorrow.")
                 else:
