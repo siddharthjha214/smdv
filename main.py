@@ -157,6 +157,20 @@ def update_backup_in_sheet(video_id, today_date, retries=3):
     print(f"WARNING: Failed to update sheet for {video_id} after {retries} attempts!")
     return False
 
+def is_already_backed_up(video_id):
+    """Live re-check of the sheet RIGHT before downloading. The definitive duplicate guard."""
+    try:
+        resp = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=15)
+        live_data = resp.json()
+        status = live_data.get(video_id, {}).get("backup_status", "Pending")
+        if status == "Backed Up":
+            print(f"LIVE SHEET CHECK: {video_id} is already 'Backed Up' — SKIPPING download to prevent duplicate.")
+            return True
+        return False
+    except Exception as e:
+        print(f"Live sheet check failed for {video_id}: {e}. Proceeding cautiously (will NOT download).")
+        return True  # Fail-safe: if we can't confirm, do NOT upload
+
 # ==========================================
 # YOUTUBE OPTIONS
 # ==========================================
@@ -311,24 +325,27 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                             data={"chat_id": CHAT_ID, "text": message}
                         )
                     
-                    # ⚠️ DUPLICATE GUARD: Only upload if NOT already backed up in the sheet
+                    # ⚠️ DUPLICATE GUARD: Check in-memory state + live sheet re-check before downloading
                     if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
-                        print("Prioritizing new video for backup...")
-                        success = download_and_backup(video_id, url, title)
-                        if success:
-                            sheet_updated = update_backup_in_sheet(video_id, today_date)
-                            if not sheet_updated:
-                                print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
-                                update_backup_in_sheet(video_id, today_date)  # One extra retry
-                            db_active_videos[video_id]["backup_status"] = "Backed Up"
-                            db_active_videos[video_id]["backup_date"] = today_date
-                            backed_up_this_run.add(video_id)
-                            quota_used += 1
-                            new_video_processed = True
+                        if is_already_backed_up(video_id):  # Live re-check right before download
+                            backed_up_this_run.add(video_id)  # Sync in-memory state
                         else:
-                            print(f"Download/upload failed for {video_id}. Will retry next run.")
+                            print("Prioritizing new video for backup...")
+                            success = download_and_backup(video_id, url, title)
+                            if success:
+                                sheet_updated = update_backup_in_sheet(video_id, today_date)
+                                if not sheet_updated:
+                                    print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
+                                    update_backup_in_sheet(video_id, today_date)  # One extra retry
+                                db_active_videos[video_id]["backup_status"] = "Backed Up"
+                                db_active_videos[video_id]["backup_date"] = today_date
+                                backed_up_this_run.add(video_id)
+                                quota_used += 1
+                                new_video_processed = True
+                            else:
+                                print(f"Download/upload failed for {video_id}. Will retry next run.")
                     elif video_id in backed_up_this_run:
-                        print(f"SKIPPED: {video_id} is already marked as Backed Up in the sheet — preventing duplicate upload.")
+                        print(f"SKIPPED: {video_id} is already marked as Backed Up — preventing duplicate upload.")
                     else:
                         print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup new video tomorrow.")
                 else:
@@ -358,11 +375,14 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
             title = db_info.get("title", "Unknown Title")
             url = db_info.get("url", f"https://youtube.com/watch?v={video_id}")
             
-            success = download_and_backup(video_id, url, title)
-            if success:
-                update_backup_in_sheet(video_id, today_date)
+            if is_already_backed_up(video_id):  # Live re-check before backlog download too
                 backed_up_this_run.add(video_id)
-                quota_used += 1
+            else:
+                success = download_and_backup(video_id, url, title)
+                if success:
+                    update_backup_in_sheet(video_id, today_date)
+                    backed_up_this_run.add(video_id)
+                    quota_used += 1
         else:
             print("No pending backlog videos found.")
             
