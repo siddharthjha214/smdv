@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deleted Videos Archive</title>
+    <meta name="description" content="Archive of deleted videos from the main channel, now public.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h1 class="logo">Video<span>Tracker</span></h1>
+            <ul class="nav-links">
+                <li><a href="index.html">Active Videos</a></li>
+                <li><a href="deleted.html" class="active">Deleted Archive</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <header class="hero hero-danger">
+        <div class="hero-content">
+            <h2>Deleted Video Archive</h2>
+            <p>Videos that were deleted or made private on the main channel, automatically backed up and published here.</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="stats-bar" id="stats-bar">
+            <div class="stat-box">
+                <h3>Total Deleted</h3>
+                <p id="total-deleted">--</p>
+            </div>
+            <div class="stat-box danger">
+                <h3>Recovered</h3>
+                <p id="total-recovered">--</p>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Fetching deleted data...</p>
+        </div>
+
+        <div class="grid" id="deleted-grid">
+            <!-- Deleted Videos will be dynamically injected here -->
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Video Tracker System. All rights reserved.</p>
+    </footer>
+
+    <script src="js/app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchDeletedVideos();
+        });
+    </script>
+</body>
+</html>

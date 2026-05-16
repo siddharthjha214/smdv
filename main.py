@@ -14,7 +14,7 @@ from googleapiclient.http import MediaFileUpload
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxPrjREbE3fl6sgnPihrqLUCWKGzFs6Uv1LD9ph0ITPqy9GtMwgukNiLA00ew96Luj/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw81BtuAqr6NlISRUHgazF7_Q3rFXmELbmDtg5h0oKtZrU8ZWvBLstzlXqJJdKwzZUG/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -127,13 +127,48 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
                 print(f"Failed to upload thumbnail: {thumb_err}")
 
                 
-        return True
+                
+        return uploaded_video_id
 
     except Exception as e:
         print(f"CRITICAL ERROR during video upload: {e}")
+        return None
+
+def make_video_public(video_id):
+    print(f"Making backup video {video_id} public...")
+    try:
+        client_id = os.getenv("YOUTUBE_CLIENT_ID")
+        client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+        refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+
+        if not all([client_id, client_secret, refresh_token]):
+            print("ERROR: YouTube API secrets are missing from environment.")
+            return False
+
+        credentials = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret
+        )
+
+        youtube = build("youtube", "v3", credentials=credentials)
+        
+        youtube.videos().update(
+            part="status",
+            body={
+                "id": video_id,
+                "status": {"privacyStatus": "public"}
+            }
+        ).execute()
+        print(f"Video {video_id} is now PUBLIC!")
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to make video {video_id} public: {e}")
         return False
 
-def update_backup_in_sheet(video_id, today_date, retries=3):
+def update_backup_in_sheet(video_id, today_date, backup_video_id=None, retries=3):
     """Update Google Sheets backup status with retry logic."""
     for attempt in range(retries):
         try:
@@ -143,7 +178,8 @@ def update_backup_in_sheet(video_id, today_date, retries=3):
                     "type": "update_backup",
                     "video_id": video_id,
                     "backup_status": "Backed Up",
-                    "backup_date": today_date
+                    "backup_date": today_date,
+                    "backup_video_id": backup_video_id or ""
                 },
                 timeout=15
             )
@@ -211,7 +247,7 @@ def download_and_backup(video_id, url, title):
                 break
                 
         if os.path.exists(video_file):
-            success = upload_video_to_youtube(video_file, title, thumbnail_file)
+            backup_vid_id = upload_video_to_youtube(video_file, title, thumbnail_file)
             
             # Clean up local files
             if os.path.exists(video_file):
@@ -219,14 +255,14 @@ def download_and_backup(video_id, url, title):
             if thumbnail_file and os.path.exists(thumbnail_file):
                 os.remove(thumbnail_file)
                 
-            return success
+            return backup_vid_id
         else:
             print(f"Failed to find downloaded video file {video_file}")
-            return False
+            return None
             
     except Exception as backup_error:
         print(f"Failed to backup video: {backup_error}")
-        return False
+        return None
 
 # ==========================================
 # 1. FETCH STATE FROM GOOGLE SHEETS
@@ -331,14 +367,15 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                             backed_up_this_run.add(video_id)  # Sync in-memory state
                         else:
                             print("Prioritizing new video for backup...")
-                            success = download_and_backup(video_id, url, title)
-                            if success:
-                                sheet_updated = update_backup_in_sheet(video_id, today_date)
+                            backup_vid_id = download_and_backup(video_id, url, title)
+                            if backup_vid_id:
+                                sheet_updated = update_backup_in_sheet(video_id, today_date, backup_vid_id)
                                 if not sheet_updated:
                                     print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
-                                    update_backup_in_sheet(video_id, today_date)  # One extra retry
+                                    update_backup_in_sheet(video_id, today_date, backup_vid_id)  # One extra retry
                                 db_active_videos[video_id]["backup_status"] = "Backed Up"
                                 db_active_videos[video_id]["backup_date"] = today_date
+                                db_active_videos[video_id]["backup_video_id"] = backup_vid_id
                                 backed_up_this_run.add(video_id)
                                 quota_used += 1
                                 new_video_processed = True
@@ -378,9 +415,9 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
             if is_already_backed_up(video_id):  # Live re-check before backlog download too
                 backed_up_this_run.add(video_id)
             else:
-                success = download_and_backup(video_id, url, title)
-                if success:
-                    update_backup_in_sheet(video_id, today_date)
+                backup_vid_id = download_and_backup(video_id, url, title)
+                if backup_vid_id:
+                    update_backup_in_sheet(video_id, today_date, backup_vid_id)
                     backed_up_this_run.add(video_id)
                     quota_used += 1
         else:
@@ -404,6 +441,11 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                 video_url = db_video_data.get("url", f"https://youtube.com/watch?v={db_video_id}")
                 deleted_time = get_current_time()
                 status = "Deleted/Private"
+                backup_video_id = db_video_data.get("backup_video_id", "")
+                
+                # Automatically make the backup video public!
+                if backup_video_id:
+                    make_video_public(backup_video_id)
                 
                 # Send to Google Sheets
                 requests.post(
@@ -415,7 +457,8 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
                         "deleted_time": deleted_time,
                         "status": status,
                         "video_id": db_video_id,
-                        "url": video_url
+                        "url": video_url,
+                        "backup_video_id": backup_video_id
                     }
                 )
 
