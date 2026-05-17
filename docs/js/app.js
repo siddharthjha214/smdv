@@ -97,8 +97,10 @@ async function fetchData() {
         const activeMap = await activeRes.json();
         deletedVideosData = await deletedRes.json();
 
-        // Convert active map to sorted array
-        activeVideosData = Object.values(activeMap).sort((a, b) => {
+        // Convert active map to sorted array and inject the video_id from the key
+        activeVideosData = Object.entries(activeMap).map(([id, data]) => {
+            return { ...data, video_id: id };
+        }).sort((a, b) => {
             return new Date(b.upload_time) - new Date(a.upload_time);
         });
 
@@ -118,11 +120,17 @@ function renderGrid() {
     const grid = document.getElementById('video-grid');
     grid.innerHTML = '';
 
-    const data = currentTab === 'active' ? activeVideosData : deletedVideosData;
+    let data = currentTab === 'active' ? activeVideosData : deletedVideosData;
 
     if (data.length === 0) {
         grid.innerHTML = `<p style="color: var(--text-muted); grid-column: 1/-1;">No videos found.</p>`;
         return;
+    }
+
+    let showMoreButton = false;
+    if (currentTab === 'active' && data.length > 12) {
+        data = data.slice(0, 12);
+        showMoreButton = true;
     }
 
     data.forEach(video => {
@@ -194,6 +202,19 @@ function renderGrid() {
 
         grid.appendChild(card);
     });
+
+    // Add "More Videos" button if needed for Active tab
+    if (showMoreButton) {
+        const moreBtnContainer = document.createElement('div');
+        moreBtnContainer.style.gridColumn = "1 / -1";
+        moreBtnContainer.style.textAlign = "center";
+        moreBtnContainer.style.marginTop = "2rem";
+
+        moreBtnContainer.innerHTML = `
+            <a href="https://www.youtube.com/@SandeepSeminars/videos" target="_blank" class="btn-watch" style="background-color: var(--accent); display: inline-block; padding: 1rem 3rem; font-size: 1.1rem; text-decoration: none;">View More on YouTube</a>
+        `;
+        grid.appendChild(moreBtnContainer);
+    }
 }
 
 function openModal(video) {

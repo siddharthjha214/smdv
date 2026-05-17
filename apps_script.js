@@ -60,8 +60,7 @@ function doGet(e) {
     
     // Add CORS headers to allow GitHub Pages frontend to fetch
     return ContentService.createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader("Access-Control-Allow-Origin", "*");
+      .setMimeType(ContentService.MimeType.JSON);
   }
   else if (action === "get_deleted_videos") {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -88,8 +87,7 @@ function doGet(e) {
     }
     
     return ContentService.createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader("Access-Control-Allow-Origin", "*");
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
