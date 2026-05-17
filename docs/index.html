@@ -11,13 +11,13 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Boxicons for icons -->
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link rel="icon" type="image/png" href="images/logo.png">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
             <div class="logo">
-                <!-- SVG Logo placeholder -->
-                <i class='bx bx-play-circle'></i>
+                <img src="images/logo.png" alt="SMDV Logo">
                 <span>SMDV Tracker</span>
             </div>
             
@@ -43,9 +43,11 @@
                 <p>Tracking the main channel in real-time. Catch all the deleted and active content right here.</p>
             </div>
 
-            <div class="tabs">
-                <button class="tab-btn active" id="tab-active">Active Videos</button>
-                <button class="tab-btn" id="tab-deleted">Deleted Videos</button>
+            <div class="tabs-container" style="display: flex; justify-content: center; width: 100%;">
+                <div class="tabs">
+                    <button class="tab-btn active" id="tab-active">Active Videos</button>
+                    <button class="tab-btn" id="tab-deleted">Deleted Videos</button>
+                </div>
             </div>
 
             <div class="stats-overview" id="stats-overview">

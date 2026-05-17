@@ -76,8 +76,10 @@ body {
     color: var(--text-primary);
 }
 
-.logo i {
-    font-size: 1.8rem;
+.logo img {
+    height: 28px;
+    width: auto;
+    border-radius: 4px;
 }
 
 .nav-links {
@@ -166,6 +168,10 @@ body {
 /* Header Content */
 .header-content {
     margin-bottom: 2rem;
+    text-align: center;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .header-content h1 {
@@ -182,11 +188,15 @@ body {
 
 /* Tabs */
 .tabs {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 1rem;
+    display: inline-flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 3rem;
+    background: var(--bg-card);
+    padding: 0.5rem;
+    border-radius: 3rem;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
 
 .tab-btn {
@@ -196,9 +206,9 @@ body {
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    transition: all 0.2s ease;
+    padding: 0.75rem 2rem;
+    border-radius: 2.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tab-btn:hover {
@@ -206,8 +216,9 @@ body {
 }
 
 .tab-btn.active {
-    background: var(--text-primary);
-    color: var(--bg-main);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
 }
 
 /* Grid Layout */
