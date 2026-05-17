@@ -141,7 +141,7 @@ function renderGrid() {
         let metaHtml = '';
 
         if (currentTab === 'active') {
-            thumbnailUrl = `https://img.youtube.com/vi/${video.video_id}/hqdefault.jpg`;
+            thumbnailUrl = `https://img.youtube.com/vi/${video.video_id}/maxresdefault.jpg`;
             
             // Format time relative or simple date (we will just use the provided text for now)
             metaHtml = `
@@ -171,7 +171,7 @@ function renderGrid() {
         } else {
             // Deleted video
             if (video.backup_video_id) {
-                thumbnailUrl = `https://img.youtube.com/vi/${video.backup_video_id}/hqdefault.jpg`;
+                thumbnailUrl = `https://img.youtube.com/vi/${video.backup_video_id}/maxresdefault.jpg`;
             } else {
                 thumbnailUrl = `https://via.placeholder.com/640x360.png?text=Deleted`;
             }
