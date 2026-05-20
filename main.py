@@ -287,8 +287,17 @@ backed_up_this_run = set(
 # Count quota used today
 quota_used = 0
 for vid, data in db_active_videos.items():
-    if data.get("backup_date") == today_date and data.get("backup_status") == "Backed Up":
-        quota_used += 1
+    if data.get("backup_status") == "Backed Up":
+        bd = str(data.get("backup_date", ""))
+        if bd == today_date:
+            quota_used += 1
+        elif "T" in bd and bd.endswith("Z"):
+            try:
+                dt_utc = datetime.strptime(bd[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.utc)
+                if dt_utc.astimezone(IST).strftime("%d %B %Y") == today_date:
+                    quota_used += 1
+            except Exception:
+                pass
 
 print(f"Daily Quota Used: {quota_used}/{DAILY_UPLOAD_QUOTA}")
 print(f"Already backed up (all time): {len(backed_up_this_run)} videos — will not re-upload these.")

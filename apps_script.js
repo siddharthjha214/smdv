@@ -3,9 +3,18 @@ function doPost(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
   if (data.type === "new_video") {
-    // Column order: Title, Upload Time, Status, Video ID, URL, Backup Status, Backup Date, Backup Video ID
     var sheet = ss.getSheetByName("Active_Videos"); 
-    sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]);
+    var values = sheet.getDataRange().getValues();
+    var exists = false;
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][3] === data.video_id) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]);
+    }
   }
   else if (data.type === "deleted_video") {
     var sheet = ss.getSheetByName("Deleted/Private_Videos"); 
@@ -19,11 +28,10 @@ function doPost(e) {
       if (values[i][3] === data.video_id) { // video_id is column D (index 3)
         // Update column F (Backup Status), G (Backup Date), H (Backup Video ID)
         sheet.getRange(i + 1, 6).setValue(data.backup_status);
-        sheet.getRange(i + 1, 7).setValue(data.backup_date);
+        sheet.getRange(i + 1, 7).setValue("'" + data.backup_date); // Prepend ' to keep as string
         if (data.backup_video_id) {
           sheet.getRange(i + 1, 8).setValue(data.backup_video_id);
         }
-        break;
       }
     }
   }
@@ -46,13 +54,23 @@ function doGet(e) {
     for (var i = 1; i < values.length; i++) {
       var row = values[i];
       if (row[3]) { // video_id is column D (index 3)
+        var existing = result[row[3]];
+        if (existing && existing.backup_status === "Backed Up" && row[5] !== "Backed Up") {
+          continue; // Keep the backed up version if there is a duplicate
+        }
+        var backup_date = row[6] || "";
+        // If Google Sheets already converted it to Date before our fix, handle formatting
+        if (backup_date instanceof Date) {
+          // Send it back as ISO so python can handle it, or we could just format it
+          // Actually, JSON.stringify will convert it to ISO string automatically
+        }
         result[row[3]] = {
           "title": row[0],
           "upload_time": row[1],
           "status": row[2],
           "url": row[4],
           "backup_status": row[5] || "Pending",
-          "backup_date": row[6] || "",
+          "backup_date": backup_date,
           "backup_video_id": row[7] || ""
         };
       }
@@ -92,7 +110,7 @@ function doGet(e) {
 }
 
 function triggerGitHubAction() {
-  var GITHUB_TOKEN = "PASTE_YOUR_NEW_ALARM_CLOCK_V2_TOKEN_HERE";
+  var GITHUB_TOKEN = "PASTE_YOUR_GITHUB_TOKEN_HERE";
   var REPO_OWNER = "siddharthjha214";
   var REPO_NAME = "smdv";
   var WORKFLOW_ID = "monitor.yml";
