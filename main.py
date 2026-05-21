@@ -288,7 +288,7 @@ backed_up_this_run = set(
 quota_used = 0
 for vid, data in db_active_videos.items():
     if data.get("backup_status") == "Backed Up":
-        bd = str(data.get("backup_date", ""))
+        bd = str(data.get("backup_date", "")).lstrip("'")
         if bd == today_date:
             quota_used += 1
         elif "T" in bd and bd.endswith("Z"):
