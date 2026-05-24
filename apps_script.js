@@ -13,8 +13,8 @@ function doPost(e) {
       }
     }
     if (!exists) {
-      sheet.insertRowBefore(2);
-      sheet.getRange(2, 1, 1, 8).setValues([[data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]]);
+      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]);
+      sortSheet(); // Automatically sort when a new video is added
     }
   }
   else if (data.type === "deleted_video") {
@@ -35,6 +35,7 @@ function doPost(e) {
         }
       }
     }
+    sortSheet(); // Automatically sort after status updates
   }
   
   return ContentService.createTextOutput("Success");
@@ -132,4 +133,52 @@ function triggerGitHubAction() {
   
   var response = UrlFetchApp.fetch(url, options);
   Logger.log(response.getContentText());
+}
+
+// ==========================================
+// HELPERS FOR AUTOMATIC SORTING
+// ==========================================
+
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('YouTube Tracker')
+      .addItem('Sort Videos by Date (Newest to Oldest)', 'sortSheet')
+      .addToUi();
+}
+
+function parseDate(dateStr) {
+  if (!dateStr) return new Date(0);
+  var cleanStr = dateStr.toString().replace(" IST", "");
+  var timestamp = Date.parse(cleanStr);
+  return isNaN(timestamp) ? new Date(0) : new Date(timestamp);
+}
+
+function sortSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Active_Videos");
+  if (!sheet) return;
+  
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 2) return; // Nothing to sort if 0 or 1 data row
+  
+  var range = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+  var values = range.getValues();
+  
+  // Filter out any completely empty rows
+  values = values.filter(function(row) {
+    return row[3] !== ""; // video_id must be present
+  });
+  
+  // Sort descending: newest date (highest timestamp) first, oldest at the bottom
+  values.sort(function(a, b) {
+    var dateA = parseDate(a[1]);
+    var dateB = parseDate(b[1]);
+    return dateB - dateA;
+  });
+  
+  // Clear the existing contents from row 2 onwards
+  range.clearContent();
+  
+  // Write the sorted values back starting from row 2
+  sheet.getRange(2, 1, values.length, sheet.getLastColumn()).setValues(values);
 }
