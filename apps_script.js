@@ -159,26 +159,46 @@ function sortSheet() {
   if (!sheet) return;
   
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 2) return; // Nothing to sort if 0 or 1 data row
+  if (lastRow <= 2) return; 
   
   var range = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
   var values = range.getValues();
   
-  // Filter out any completely empty rows
-  values = values.filter(function(row) {
-    return row[3] !== ""; // video_id must be present
-  });
+  var seenIds = {};
+  var uniqueValues = [];
   
-  // Sort descending: newest date (highest timestamp) first, oldest at the bottom
-  values.sort(function(a, b) {
+  // 1. Filter out empty rows and deduplicate based on video_id (column D / index 3)
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var videoId = row[3];
+    if (videoId && videoId.toString().trim() !== "") {
+      if (!seenIds[videoId]) {
+        seenIds[videoId] = row;
+        uniqueValues.push(row);
+      } else {
+        // If we see a duplicate, prioritize the one that is "Backed Up"
+        var existingRow = seenIds[videoId];
+        if (row[5] === "Backed Up" && existingRow[5] !== "Backed Up") {
+          var idx = uniqueValues.indexOf(existingRow);
+          if (idx !== -1) {
+            uniqueValues[idx] = row;
+            seenIds[videoId] = row;
+          }
+        }
+      }
+    }
+  }
+  
+  // 2. Sort descending: newest date first, oldest at the bottom
+  uniqueValues.sort(function(a, b) {
     var dateA = parseDate(a[1]);
     var dateB = parseDate(b[1]);
     return dateB - dateA;
   });
   
   // Clear the existing contents from row 2 onwards
-  range.clearContent();
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
   
-  // Write the sorted values back starting from row 2
-  sheet.getRange(2, 1, values.length, sheet.getLastColumn()).setValues(values);
+  // Write the sorted and deduplicated values back starting from row 2
+  sheet.getRange(2, 1, uniqueValues.length, sheet.getLastColumn()).setValues(uniqueValues);
 }
