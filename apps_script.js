@@ -13,7 +13,8 @@ function doPost(e) {
       }
     }
     if (!exists) {
-      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]);
+      sheet.insertRowBefore(2);
+      sheet.getRange(2, 1, 1, 8).setValues([[data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]]);
     }
   }
   else if (data.type === "deleted_video") {
