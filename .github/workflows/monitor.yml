@@ -30,7 +30,13 @@ jobs:
           deno-version: v2.x
 
       - name: Setup FFmpeg
-        uses: federicocarboni/setup-ffmpeg@v3
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          else
+            echo "ffmpeg is already installed on the runner"
+          fi
 
       - name: Install Python Dependencies
         run: |

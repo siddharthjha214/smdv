@@ -299,6 +299,12 @@ for vid, data in db_active_videos.items():
             except Exception:
                 pass
 
+# Check if it's past 10:30 PM (22:30) IST. If so, raise the backlog quota to 6 to use the reserved slot.
+now_ist = datetime.now(pytz.utc).astimezone(IST)
+if now_ist.hour > 22 or (now_ist.hour == 22 and now_ist.minute >= 30):
+    DAILY_BACKLOG_QUOTA = 6
+    print("Time is past 10:30 PM IST. Raising DAILY_BACKLOG_QUOTA to 6 to utilize the reserved slot.")
+
 print(f"Daily Quota Used: {quota_used}/{DAILY_UPLOAD_QUOTA}")
 print(f"Already backed up (all time): {len(backed_up_this_run)} videos — will not re-upload these.")
 
