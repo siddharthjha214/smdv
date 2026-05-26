@@ -25,9 +25,9 @@ jobs:
           python-version: "3.11"
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Setup FFmpeg
         run: |
