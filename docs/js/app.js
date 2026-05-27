@@ -1,256 +1,484 @@
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw81BtuAqr6NlISRUHgazF7_Q3rFXmELbmDtg5h0oKtZrU8ZWvBLstzlXqJJdKwzZUG/exec";
+/* ============================================================
+   SMDV Tracker — app.js
+   Handles: theme, nav (desktop + mobile), data fetch, render
+   ============================================================ */
 
-let activeVideosData = [];
+const GOOGLE_SCRIPT_URL =
+    "https://script.google.com/macros/s/AKfycbw81BtuAqr6NlISRUHgazF7_Q3rFXmELbmDtg5h0oKtZrU8ZWvBLstzlXqJJdKwzZUG/exec";
+
+let activeVideosData  = [];
 let deletedVideosData = [];
-let currentTab = 'active'; // 'active' or 'deleted'
+let currentTab        = "active"; // "active" | "deleted"
 
-document.addEventListener('DOMContentLoaded', () => {
+/* ── Boot ─────────────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", () => {
     setupThemeToggle();
     setupNavigation();
+    setupMobileMenu();
     fetchData();
 });
 
+/* ── Theme Toggle ─────────────────────────────────────────── */
 function setupThemeToggle() {
-    const toggleBtn = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const htmlEl = document.documentElement;
+    const btn   = document.getElementById("theme-toggle");
+    const icon  = document.getElementById("theme-icon");
+    const html  = document.documentElement;
 
-    // Check local storage
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
-        htmlEl.setAttribute('data-theme', 'light');
-        themeIcon.className = 'bx bx-moon';
+    const saved = localStorage.getItem("theme");
+    if (saved === "light") {
+        html.setAttribute("data-theme", "light");
+        icon.className = "bx bx-moon";
     }
 
-    toggleBtn.addEventListener('click', () => {
-        if (htmlEl.getAttribute('data-theme') === 'dark') {
-            htmlEl.setAttribute('data-theme', 'light');
-            themeIcon.className = 'bx bx-moon';
-            localStorage.setItem('theme', 'light');
-        } else {
-            htmlEl.setAttribute('data-theme', 'dark');
-            themeIcon.className = 'bx bx-sun';
-            localStorage.setItem('theme', 'dark');
-        }
+    btn.addEventListener("click", () => {
+        const isDark = html.getAttribute("data-theme") === "dark";
+        html.setAttribute("data-theme", isDark ? "light" : "dark");
+        icon.className = isDark ? "bx bx-moon" : "bx bx-sun";
+        localStorage.setItem("theme", isDark ? "light" : "dark");
     });
 }
 
+/* ── Desktop Navigation ───────────────────────────────────── */
 function setupNavigation() {
-    // Top Nav
-    const navVideos = document.getElementById('nav-videos');
-    const navContact = document.getElementById('nav-contact');
-    const secVideos = document.getElementById('section-videos');
-    const secContact = document.getElementById('section-contact');
+    const navVideos  = document.getElementById("nav-videos");
+    const navContact = document.getElementById("nav-contact");
+    const secVideos  = document.getElementById("section-videos");
+    const secContact = document.getElementById("section-contact");
 
-    navVideos.addEventListener('click', () => {
-        navVideos.classList.add('active');
-        navContact.classList.remove('active');
-        secVideos.classList.add('active');
-        secContact.classList.remove('active');
+    function showSection(show, hide, activeBtn, inactiveBtn) {
+        show.classList.add("active");
+        hide.classList.remove("active");
+        activeBtn.classList.add("active");
+        activeBtn.setAttribute("aria-current", "page");
+        inactiveBtn.classList.remove("active");
+        inactiveBtn.removeAttribute("aria-current");
+
+        // Mirror state to mobile menu buttons
+        const mobVideos  = document.getElementById("mob-nav-videos");
+        const mobContact = document.getElementById("mob-nav-contact");
+        if (activeBtn === navVideos) {
+            mobVideos.classList.add("active");
+            mobContact.classList.remove("active");
+        } else {
+            mobContact.classList.add("active");
+            mobVideos.classList.remove("active");
+        }
+
+        closeMobileMenu();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    navVideos.addEventListener("click",  () => showSection(secVideos, secContact, navVideos, navContact));
+    navContact.addEventListener("click", () => showSection(secContact, secVideos, navContact, navVideos));
+
+    // Mobile nav mirrors
+    document.getElementById("mob-nav-videos").addEventListener("click",
+        () => showSection(secVideos, secContact, navVideos, navContact));
+    document.getElementById("mob-nav-contact").addEventListener("click",
+        () => showSection(secContact, secVideos, navContact, navVideos));
+
+    // Logo home
+    document.getElementById("logo-home").addEventListener("click", (e) => {
+        e.preventDefault();
+        showSection(secVideos, secContact, navVideos, navContact);
     });
 
-    navContact.addEventListener('click', () => {
-        navContact.classList.add('active');
-        navVideos.classList.remove('active');
-        secContact.classList.add('active');
-        secVideos.classList.remove('active');
-    });
+    /* ── Video sub-tabs ── */
+    const tabActive  = document.getElementById("tab-active");
+    const tabDeleted = document.getElementById("tab-deleted");
 
-    // Sub Tabs (Active / Deleted)
-    const tabActive = document.getElementById('tab-active');
-    const tabDeleted = document.getElementById('tab-deleted');
-
-    tabActive.addEventListener('click', () => {
-        tabActive.classList.add('active');
-        tabDeleted.classList.remove('active');
-        currentTab = 'active';
+    tabActive.addEventListener("click", () => {
+        tabActive.classList.add("active");
+        tabActive.setAttribute("aria-selected", "true");
+        tabDeleted.classList.remove("active");
+        tabDeleted.setAttribute("aria-selected", "false");
+        currentTab = "active";
         renderGrid();
     });
 
-    tabDeleted.addEventListener('click', () => {
-        tabDeleted.classList.add('active');
-        tabActive.classList.remove('active');
-        currentTab = 'deleted';
+    tabDeleted.addEventListener("click", () => {
+        tabDeleted.classList.add("active");
+        tabDeleted.setAttribute("aria-selected", "true");
+        tabActive.classList.remove("active");
+        tabActive.setAttribute("aria-selected", "false");
+        currentTab = "deleted";
         renderGrid();
     });
 
-    // Modal close
-    document.querySelector('.close-modal').addEventListener('click', closeModal);
-    document.getElementById('video-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'video-modal') closeModal();
+    /* ── Modal close ── */
+    document.getElementById("close-modal-btn").addEventListener("click", closeModal);
+    document.getElementById("video-modal").addEventListener("click", (e) => {
+        if (e.target.id === "video-modal") closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
     });
 }
 
+/* ── Mobile Menu ──────────────────────────────────────────── */
+function setupMobileMenu() {
+    const hamburger = document.getElementById("hamburger");
+    const menu      = document.getElementById("mobile-menu");
+
+    hamburger.addEventListener("click", () => {
+        const isOpen = menu.classList.toggle("open");
+        hamburger.classList.toggle("open", isOpen);
+        hamburger.setAttribute("aria-expanded", String(isOpen));
+    });
+}
+
+function closeMobileMenu() {
+    const hamburger = document.getElementById("hamburger");
+    const menu      = document.getElementById("mobile-menu");
+    menu.classList.remove("open");
+    hamburger.classList.remove("open");
+    hamburger.setAttribute("aria-expanded", "false");
+}
+
+/* ── Fetch Data ───────────────────────────────────────────── */
 async function fetchData() {
-    const loading = document.getElementById('loading');
-    const grid = document.getElementById('video-grid');
-    loading.style.display = 'flex';
-    grid.innerHTML = '';
+    const loading = document.getElementById("loading");
+    const grid    = document.getElementById("video-grid");
+
+    loading.style.display = "flex";
+    grid.innerHTML = "";
 
     try {
-        // Fetch both concurrently
         const [activeRes, deletedRes] = await Promise.all([
             fetch(`${GOOGLE_SCRIPT_URL}?action=get_active_videos`),
             fetch(`${GOOGLE_SCRIPT_URL}?action=get_deleted_videos`)
         ]);
 
-        const activeMap = await activeRes.json();
+        const activeMap   = await activeRes.json();
         deletedVideosData = await deletedRes.json();
 
-        // Convert active map to sorted array and inject the video_id from the key
-        activeVideosData = Object.entries(activeMap).map(([id, data]) => {
-            return { ...data, video_id: id };
-        }).sort((a, b) => {
-            return new Date(b.upload_time) - new Date(a.upload_time);
-        });
+        // Convert active map → sorted array
+        activeVideosData = Object.entries(activeMap)
+            .map(([id, data]) => ({ ...data, video_id: id }))
+            .sort((a, b) => new Date(b.upload_time) - new Date(a.upload_time));
 
         // Sort deleted newest first
-        deletedVideosData.sort((a, b) => new Date(b.deleted_time) - new Date(a.deleted_time));
+        deletedVideosData.sort((a, b) =>
+            new Date(b.deleted_time) - new Date(a.deleted_time));
 
-        loading.style.display = 'none';
+        loading.style.display = "none";
+        renderStats();
         renderGrid();
 
-    } catch (error) {
-        console.error("Error fetching data:", error);
-        loading.innerHTML = '<p style="color: var(--danger)">Failed to sync with database. Please try again later.</p>';
+    } catch (err) {
+        console.error("Fetch error:", err);
+        loading.innerHTML =
+            `<p style="color:var(--danger);font-size:.9rem;">
+                <i class='bx bx-error-circle' style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+                Failed to sync. Please refresh and try again.
+             </p>`;
     }
 }
 
+/* ── Stats Bar ────────────────────────────────────────────── */
+function renderStats() {
+    const el = document.getElementById("stats-overview");
+    el.innerHTML = `
+        <div class="stat-item">
+            <i class='bx bx-video'></i>
+            <strong>${activeVideosData.length}</strong> Active
+        </div>
+        <div class="stat-item">
+            <i class='bx bx-trash'></i>
+            <strong>${deletedVideosData.length}</strong> Deleted
+        </div>
+        <div class="stat-item">
+            <i class='bx bx-time'></i>
+            Updated&nbsp;<strong>just now</strong>
+        </div>
+    `;
+}
+
+/* ── Format Date ──────────────────────────────────────────── */
+// Dates are already stored as formatted strings like:
+//   "27 May 2026 11:30 PM IST"  (active upload_time)
+//   "27 May 2026 11:35 PM IST"  (deleted_time / original_upload_time)
+// We simply return them, trimming " IST" for compact card display.
+function formatDate(dateStr, compact) {
+    if (!dateStr || dateStr === "Unknown" || dateStr === "") return "—";
+    const s = String(dateStr).trim();
+    if (compact) {
+        // Remove " IST" and time portion for card display → "27 May 2026"
+        return s.replace(/ IST$/i, "").replace(/\s+\d{1,2}:\d{2}\s*(AM|PM)?$/i, "").trim();
+    }
+    return s; // Full string for modal
+}
+
+/* ── Render Grid ──────────────────────────────────────────── */
 function renderGrid() {
-    const grid = document.getElementById('video-grid');
-    grid.innerHTML = '';
+    const grid = document.getElementById("video-grid");
+    grid.innerHTML = "";
 
-    let data = currentTab === 'active' ? activeVideosData : deletedVideosData;
+    let data = currentTab === "active" ? activeVideosData : deletedVideosData;
 
-    if (data.length === 0) {
-        grid.innerHTML = `<p style="color: var(--text-muted); grid-column: 1/-1;">No videos found.</p>`;
+    if (!data.length) {
+        grid.innerHTML = `
+            <p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:4rem 0;font-size:.95rem;">
+                No videos found.
+            </p>`;
         return;
     }
 
-    let showMoreButton = false;
-    if (currentTab === 'active' && data.length > 12) {
-        data = data.slice(0, 12);
-        showMoreButton = true;
+    let showMore = false;
+    if (currentTab === "active" && data.length > 12) {
+        data     = data.slice(0, 12);
+        showMore = true;
     }
 
     data.forEach(video => {
-        const card = document.createElement('div');
-        card.className = 'card';
+        const card = document.createElement("div");
+        card.className = "card";
+        card.setAttribute("role", "article");
 
-        let thumbnailUrl = '';
-        let metaHtml = '';
-
-        if (currentTab === 'active') {
-            thumbnailUrl = `https://img.youtube.com/vi/${video.video_id}/maxresdefault.jpg`;
-            
-            // Format time relative or simple date (we will just use the provided text for now)
-            metaHtml = `
-                <span>${video.upload_time.split(' ')[0]} ${video.upload_time.split(' ')[1]}</span>
-            `;
+        if (currentTab === "active") {
+            /* ── Active Video Card ── */
+            const thumbUrl = `https://img.youtube.com/vi/${video.video_id}/maxresdefault.jpg`;
+            const dateStr  = formatDate(video.upload_time, true);
 
             card.innerHTML = `
                 <div class="thumbnail-container">
-                    <img src="${thumbnailUrl}" alt="Thumbnail" loading="lazy" onerror="this.src='https://via.placeholder.com/640x360.png?text=No+Thumbnail'">
-                    <div class="play-overlay">
+                    <img src="${thumbUrl}"
+                         alt="${escapeHtml(video.title)} thumbnail"
+                         loading="lazy"
+                         onerror="this.src='https://placehold.co/640x360/0f0f1e/6c63ff?text=SMDV'">
+                    <div class="play-overlay" aria-hidden="true">
                         <div class="play-btn"><i class='bx bx-play'></i></div>
                     </div>
                 </div>
                 <div class="card-content">
-                    <h3 class="card-title">${video.title}</h3>
+                    <h3 class="card-title">${escapeHtml(video.title)}</h3>
                     <div class="card-meta">
-                        ${metaHtml}
+                        <span class="card-date">
+                            <i class='bx bx-calendar-alt'></i>${dateStr}
+                        </span>
                     </div>
                 </div>
             `;
 
-            // Open original video on click
-            card.addEventListener('click', () => {
-                window.open(video.url, '_blank');
+            card.addEventListener("click", () => window.open(video.url, "_blank"));
+            card.setAttribute("tabindex", "0");
+            card.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") window.open(video.url, "_blank");
             });
 
         } else {
-            // Deleted video
-            if (video.backup_video_id) {
-                thumbnailUrl = `https://img.youtube.com/vi/${video.backup_video_id}/maxresdefault.jpg`;
-            } else {
-                thumbnailUrl = `https://via.placeholder.com/640x360.png?text=Deleted`;
-            }
-
-            metaHtml = `<span class="badge deleted">Deleted</span>`;
+            /* ── Deleted Video Card ── */
+            const thumbUrl = video.backup_video_id
+                ? `https://img.youtube.com/vi/${video.backup_video_id}/maxresdefault.jpg`
+                : `https://placehold.co/640x360/0f0f1e/ff4f6a?text=Deleted`;
+            const dateStr  = formatDate(video.original_upload_time, true);
 
             card.innerHTML = `
                 <div class="thumbnail-container">
-                    <img src="${thumbnailUrl}" alt="Thumbnail" loading="lazy" onerror="this.src='https://via.placeholder.com/640x360.png?text=No+Thumbnail'">
-                    <div class="play-overlay">
-                        <div class="play-btn"><i class='bx bx-info-circle'></i></div>
+                    <img src="${thumbUrl}"
+                         alt="${escapeHtml(video.title)} thumbnail"
+                         loading="lazy"
+                         onerror="this.src='https://placehold.co/640x360/0f0f1e/ff4f6a?text=Deleted'">
+                    <div class="play-overlay" aria-hidden="true">
+                        <div class="play-btn" style="background:var(--danger);">
+                            <i class='bx bx-info-circle'></i>
+                        </div>
                     </div>
                 </div>
                 <div class="card-content">
-                    <h3 class="card-title">${video.title}</h3>
+                    <h3 class="card-title">${escapeHtml(video.title)}</h3>
                     <div class="card-meta">
-                        <span>${video.original_upload_time.split(' ')[0]} ${video.original_upload_time.split(' ')[1]}</span>
-                        ${metaHtml}
+                        <span class="card-date">
+                            <i class='bx bx-calendar-alt'></i>${dateStr}
+                        </span>
+                        <span class="badge deleted">
+                            <i class='bx bx-trash'></i> Deleted
+                        </span>
                     </div>
                 </div>
             `;
 
-            // Open modal on click
-            card.addEventListener('click', () => {
-                openModal(video);
+            card.addEventListener("click", () => openModal(video));
+            card.setAttribute("tabindex", "0");
+            card.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") openModal(video);
             });
         }
 
         grid.appendChild(card);
     });
 
-    // Add "More Videos" button if needed for Active tab
-    if (showMoreButton) {
-        const moreBtnContainer = document.createElement('div');
-        moreBtnContainer.style.gridColumn = "1 / -1";
-        moreBtnContainer.style.textAlign = "center";
-        moreBtnContainer.style.marginTop = "2rem";
-
-        moreBtnContainer.innerHTML = `
-            <a href="https://www.youtube.com/@SandeepSeminars/videos" target="_blank" class="btn-watch" style="background-color: var(--accent); display: inline-block; padding: 1rem 3rem; font-size: 1.1rem; text-decoration: none;">View More on YouTube</a>
+    /* ── View More Button ── */
+    if (showMore) {
+        const wrap = document.createElement("div");
+        wrap.className = "view-more-wrap";
+        wrap.innerHTML = `
+            <a href="https://www.youtube.com/@SandeepSeminars/videos"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="btn-view-more">
+                <i class='bx bxl-youtube'></i>
+                View More on YouTube
+            </a>
         `;
-        grid.appendChild(moreBtnContainer);
+        grid.appendChild(wrap);
     }
 }
 
+/* ── Modal ────────────────────────────────────────────────── */
 function openModal(video) {
-    const modal = document.getElementById('video-modal');
-    const modalBody = document.getElementById('modal-body');
+    const modal     = document.getElementById("video-modal");
+    const modalBody = document.getElementById("modal-body");
 
-    let backupLink = '';
+    const uploadDate = formatDate(video.original_upload_time, false);
+    const deleteDate = formatDate(video.deleted_time, false);
+
+    let backupSection = "";
     if (video.backup_video_id) {
-        backupLink = `<a href="https://youtube.com/watch?v=${video.backup_video_id}" target="_blank" class="btn-watch">Watch Backup Video</a>`;
+        backupSection = `
+            <a href="https://youtube.com/watch?v=${video.backup_video_id}"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="btn-watch">
+                <i class='bx bx-play-circle'></i> Watch Backup Video
+            </a>`;
     } else {
-        backupLink = `<p style="color: var(--danger); margin-top: 1rem;">No backup was available for this video.</p>`;
+        backupSection = `
+            <p style="color:var(--danger);margin-top:.75rem;font-size:.875rem;text-align:center;">
+                <i class='bx bx-error-circle'></i> No backup available for this video.
+            </p>`;
     }
 
     modalBody.innerHTML = `
         <div class="modal-body-content">
-            <h2>${video.title}</h2>
+            <h2 id="modal-title">${escapeHtml(video.title)}</h2>
             <div class="detail-row">
-                <span>Original Upload (IST)</span>
-                <span>${video.original_upload_time}</span>
+                <span>Original Upload</span>
+                <span>${escapeHtml(uploadDate)}</span>
             </div>
             <div class="detail-row">
-                <span>Exact Deletion Time (IST)</span>
-                <span>${video.deleted_time}</span>
+                <span>Deleted At</span>
+                <span>${escapeHtml(deleteDate)}</span>
             </div>
             <div class="detail-row">
                 <span>Status</span>
-                <span style="color: var(--danger)">Deleted / Private</span>
+                <span style="color:var(--danger);font-weight:700;">
+                    <i class='bx bx-trash'></i> Deleted / Private
+                </span>
             </div>
-            ${backupLink}
+            ${backupSection}
         </div>
     `;
 
-    modal.classList.add('active');
+    modal.classList.add("active");
+    document.body.style.overflow = "hidden";
+
+    // Focus close button for accessibility
+    setTimeout(() => {
+        document.getElementById("close-modal-btn").focus();
+    }, 100);
 }
 
 function closeModal() {
-    const modal = document.getElementById('video-modal');
-    modal.classList.remove('active');
+    const modal = document.getElementById("video-modal");
+    modal.classList.remove("active");
+    document.body.style.overflow = "";
 }
+
+/* ── Helpers ──────────────────────────────────────────────── */
+function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g,  "&amp;")
+        .replace(/</g,  "&lt;")
+        .replace(/>/g,  "&gt;")
+        .replace(/"/g,  "&quot;")
+        .replace(/'/g,  "&#039;");
+}
+
+/* ── Live Search ──────────────────────────────────────────── */
+function setupSearch() {
+    const input     = document.getElementById("search-input");
+    const clearBtn  = document.getElementById("search-clear");
+    if (!input) return;
+
+    let debounceTimer;
+
+    input.addEventListener("input", () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            const q = input.value.trim();
+            clearBtn.style.display = q ? "flex" : "none";
+            filterCards(q);
+        }, 200);
+    });
+
+    clearBtn.addEventListener("click", () => {
+        input.value = "";
+        clearBtn.style.display = "none";
+        filterCards("");
+        input.focus();
+    });
+
+    // Reset search when tabs switch
+    document.getElementById("tab-active").addEventListener("click",  () => resetSearch());
+    document.getElementById("tab-deleted").addEventListener("click", () => resetSearch());
+}
+
+function resetSearch() {
+    const input    = document.getElementById("search-input");
+    const clearBtn = document.getElementById("search-clear");
+    if (!input) return;
+    input.value = "";
+    clearBtn.style.display = "none";
+}
+
+function filterCards(query) {
+    const grid  = document.getElementById("video-grid");
+    const cards = grid.querySelectorAll(".card");
+    const q     = query.toLowerCase();
+
+    let visibleCount = 0;
+    cards.forEach(card => {
+        const titleEl = card.querySelector(".card-title");
+        if (!titleEl) return;
+        const matches = !q || titleEl.textContent.toLowerCase().includes(q);
+        card.style.display = matches ? "" : "none";
+        if (matches) visibleCount++;
+    });
+
+    // Show/hide empty state
+    let emptyMsg = grid.querySelector(".search-empty");
+    if (visibleCount === 0 && q) {
+        if (!emptyMsg) {
+            emptyMsg = document.createElement("p");
+            emptyMsg.className = "search-empty";
+            emptyMsg.style.cssText =
+                "color:var(--text-muted);grid-column:1/-1;text-align:center;padding:4rem 0;font-size:.9rem;";
+            grid.appendChild(emptyMsg);
+        }
+        emptyMsg.textContent = `No videos found for "${query}".`;
+    } else if (emptyMsg) {
+        emptyMsg.remove();
+    }
+}
+
+/* ── Scroll-to-Top ────────────────────────────────────────── */
+function setupScrollTop() {
+    const btn = document.getElementById("scroll-top");
+    if (!btn) return;
+
+    window.addEventListener("scroll", () => {
+        btn.classList.toggle("visible", window.scrollY > 400);
+    }, { passive: true });
+
+    btn.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+}
+
+// Initialise new features after DOM is ready
+document.addEventListener("DOMContentLoaded", () => {
+    setupSearch();
+    setupScrollTop();
+});

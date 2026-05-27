@@ -3,141 +3,240 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sandeep Maheshwari Deleted Videos Tracker</title>
-    <meta name="description" content="Tracker for Sandeep Maheshwari's active and deleted videos.">
+    <title>SMDV Tracker — Sandeep Maheshwari Deleted Videos</title>
+    <meta name="description" content="Track Sandeep Maheshwari's active and deleted YouTube videos in real-time. A fan-made platform to help you stay updated.">
+    <meta name="theme-color" content="#070710">
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+
+    <!-- Styles -->
     <link rel="stylesheet" href="css/style.css">
-    <!-- Boxicons for icons -->
-    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+
+    <!-- Favicon -->
     <link rel="icon" type="image/png" href="images/logo.png">
 </head>
 <body>
-    <nav class="navbar">
+
+    <!-- ░░ NAVBAR ░░ -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
         <div class="nav-container">
-            <div class="logo">
+            <!-- Logo -->
+            <a class="logo" href="#" id="logo-home" aria-label="SMDV Tracker Home">
                 <img src="images/logo.png" alt="SMDV Logo">
-                <span>SMDV Tracker</span>
-            </div>
-            
-            <ul class="nav-links">
-                <li><button class="nav-btn active" id="nav-videos">Videos</button></li>
+                <span class="logo-text">SMDV <span>Tracker</span></span>
+            </a>
+
+            <!-- Desktop Nav Links -->
+            <ul class="nav-links" role="list">
+                <li><button class="nav-btn active" id="nav-videos" aria-current="page">Videos</button></li>
                 <li><button class="nav-btn" id="nav-contact">Contact</button></li>
             </ul>
 
+            <!-- Actions -->
             <div class="nav-actions">
-                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle Dark/Light Mode">
-                    <i class='bx bx-sun' id="theme-icon"></i>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark/light mode">
+                    <i class="bx bx-sun" id="theme-icon" aria-hidden="true"></i>
+                </button>
+                <!-- Hamburger (mobile) -->
+                <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">
+                    <span></span><span></span><span></span>
                 </button>
             </div>
         </div>
     </nav>
 
-    <main class="container">
-        
-        <!-- VIDEOS SECTION -->
-        <section id="section-videos" class="section active">
-            <div class="header-content">
-                <h1>Sandeep Maheshwari Deleted Videos</h1>
-                <p>Tracking the main channel in real-time. Catch all the deleted and active content right here.</p>
-            </div>
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobile-menu" role="menu">
+        <button class="nav-btn active" id="mob-nav-videos" role="menuitem">Videos</button>
+        <button class="nav-btn" id="mob-nav-contact" role="menuitem">Contact</button>
+    </div>
 
-            <div class="tabs-container" style="display: flex; justify-content: center; width: 100%;">
-                <div class="tabs">
-                    <button class="tab-btn active" id="tab-active">Active Videos</button>
-                    <button class="tab-btn" id="tab-deleted">Deleted Videos</button>
+    <!-- ░░ MAIN ░░ -->
+    <main>
+        <div class="container">
+
+            <!-- ── VIDEOS SECTION ─────────────────────────────── -->
+            <section id="section-videos" class="section active" aria-labelledby="videos-heading">
+
+                <!-- Hero -->
+                <header class="hero">
+                    <div class="hero-badge" aria-label="Live tracking active">
+                        <span class="dot" aria-hidden="true"></span>
+                        Live Tracking
+                    </div>
+                    <h1 id="videos-heading">
+                        Sandeep Maheshwari<br>
+                        <span class="gradient-text">Deleted Videos</span>
+                    </h1>
+                    <p>Tracking the main channel in real-time. Catch all deleted and active content right here.</p>
+                </header>
+
+                <!-- Tabs -->
+                <div class="tabs-wrapper" role="tablist" aria-label="Video categories">
+                    <div class="tabs">
+                        <button class="tab-btn active" id="tab-active" role="tab" aria-selected="true" aria-controls="video-grid">
+                            <i class="bx bx-play-circle" aria-hidden="true"></i>&nbsp; Active Videos
+                        </button>
+                        <button class="tab-btn" id="tab-deleted" role="tab" aria-selected="false" aria-controls="video-grid">
+                            <i class="bx bx-trash" aria-hidden="true"></i>&nbsp; Deleted Videos
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <div class="stats-overview" id="stats-overview">
-                <!-- Stats injected here -->
-            </div>
+                <!-- Stats -->
+                <div class="stats-overview" id="stats-overview" aria-live="polite">
+                    <!-- Injected by JS -->
+                </div>
 
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Syncing with database...</p>
-            </div>
+                <!-- Search -->
+                <div class="search-wrapper">
+                    <div class="search-box">
+                        <i class="bx bx-search" aria-hidden="true"></i>
+                        <input
+                            type="search"
+                            id="search-input"
+                            placeholder="Search videos…"
+                            autocomplete="off"
+                            aria-label="Search videos"
+                        >
+                        <button class="search-clear" id="search-clear" aria-label="Clear search" style="display:none;">
+                            <i class="bx bx-x"></i>
+                        </button>
+                    </div>
+                </div>
 
-            <div class="grid" id="video-grid">
-                <!-- Videos injected here -->
-            </div>
-        </section>
+                <!-- Loading -->
+                <div class="loading" id="loading" role="status" aria-label="Loading videos">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <p>Syncing with database…</p>
+                </div>
 
-        <!-- CONTACT SECTION -->
-        <section id="section-contact" class="section">
-            <div class="header-content">
-                <h1>Contact Us</h1>
-                <p>Independent fan-created platform.</p>
-            </div>
-            <div class="contact-card">
-                <p>Welcome to the official contact page of this independent fan-created platform dedicated to tracking and organizing videos from the Sandeep Maheshwari YouTube channel.</p>
-                <p>This website has been developed purely out of admiration, respect, and appreciation for the valuable content shared by Sandeep Maheshwari Sir over the years. As a long-time follower and supporter of his work, I created this platform to make it easier for viewers and fans to track, discover, and stay updated with videos from the channel in a simple and organized way.</p>
-                
-                <h3>Purpose of This Website</h3>
-                <p>The primary purpose of this website is to:</p>
-                <ul>
-                    <li>Track newly uploaded videos from the channel</li>
-                    <li>Maintain an organized archive of content</li>
-                    <li>Help viewers easily discover motivational and educational videos</li>
-                    <li>Create a better browsing and tracking experience for fans</li>
-                </ul>
-                <p>This project is built with the intention of serving the community of viewers who regularly follow Sandeep Maheshwari Sir’s content and teachings.</p>
-                
-                <h3>Transparency & Disclaimer</h3>
-                <p>I would like to clearly state the following:</p>
-                <ul>
-                    <li>This website is an independent fan-made project.</li>
-                    <li>I have zero intention of earning money from Sandeep Maheshwari Sir’s content.</li>
-                    <li>This platform is not created for scams, fraud, impersonation, or misleading activities of any kind.</li>
-                    <li>I do not claim ownership of any original video, audio, branding, or intellectual property associated with the official channel.</li>
-                    <li>All rights to the original content belong to their respective owners.</li>
-                    <li>This website is created solely for informational and tracking purposes as a fan initiative.</li>
-                </ul>
-                <p>Respecting creators and maintaining transparency is extremely important to me. The goal of this platform is only to support accessibility and organization for viewers who genuinely enjoy the content.</p>
-                
-                <h3>Not Affiliated With the Official Channel</h3>
-                <p>Please note that this website is not officially affiliated with, endorsed by, or managed by Sandeep Maheshwari Sir or his official team.</p>
-                <p>If at any point any official representative has concerns regarding content, listings, or presentation on this platform, I will fully cooperate and take immediate action wherever necessary.</p>
-                
-                <h3>Privacy & User Trust</h3>
-                <p>This platform is designed with simplicity and minimalism in mind. I strongly value user trust and transparency.</p>
-                <ul>
-                    <li>No misleading claims</li>
-                    <li>No fake promotions</li>
-                    <li>No spam activity</li>
-                    <li>No hidden scams</li>
-                    <li>No misuse of visitor data</li>
-                </ul>
-                <p>The intention is to maintain a clean, respectful, and genuine experience for every visitor using this website.</p>
+                <!-- Grid -->
+                <div class="grid" id="video-grid" role="tabpanel" aria-live="polite">
+                    <!-- Injected by JS -->
+                </div>
 
-                <h3>Get in Touch</h3>
-                <p>If you would like to:</p>
-                <ul>
-                    <li>Report an issue</li>
-                    <li>Suggest improvements</li>
-                    <li>Share feedback</li>
-                    <li>Request corrections</li>
-                    <li>Raise copyright concerns</li>
-                    <li>Contact regarding any content displayed on the website</li>
-                </ul>
-                <p>Please feel free to reach out to me at: <br><a href="mailto:smdeletedvideos@gmail.com" style="color: var(--accent); text-decoration: underline; font-weight: 600;">smdeletedvideos@gmail.com</a></p>
-                
-                <hr style="border: 0; height: 1px; background: var(--border); margin: 2rem 0;">
-                
-                <p>I genuinely appreciate every visitor, supporter, and fellow fan who uses this platform.</p>
-                <p><em>Thank you for visiting and supporting this independent community-driven project built with respect, simplicity, and admiration for meaningful content.</em></p>
-            </div>
-        </section>
-        
+            </section>
+
+            <!-- ── CONTACT SECTION ────────────────────────────── -->
+            <section id="section-contact" class="section" aria-labelledby="contact-heading">
+
+                <header class="contact-hero">
+                    <h1 id="contact-heading">Get in Touch</h1>
+                    <p>Independent fan-created platform. Built with respect, transparency, and admiration.</p>
+                    <!-- Tracking since badge -->
+                    <div class="tracking-since-badge">
+                        <i class="bx bx-calendar-check" aria-hidden="true"></i>
+                        Tracking Sandeep Maheshwari's channel since <strong>May 2026</strong>
+                    </div>
+                </header>
+
+                <div class="contact-card">
+
+                    <p>Welcome to the official contact page of this independent fan-created platform dedicated to tracking and organizing videos from the <strong style="color:var(--text-primary)">Sandeep Maheshwari</strong> YouTube channel.</p>
+
+                    <p>This website has been developed purely out of admiration, respect, and appreciation for the valuable content shared by Sandeep Maheshwari Sir over the years. As a long-time follower and supporter, I created this platform to make it easier for viewers to track, discover, and stay updated with videos from the channel.</p>
+
+                    <h3>Purpose of This Website</h3>
+                    <ul>
+                        <li>Track newly uploaded videos from the channel</li>
+                        <li>Maintain an organized archive of content</li>
+                        <li>Help viewers easily discover motivational and educational videos</li>
+                        <li>Create a better browsing and tracking experience for fans</li>
+                    </ul>
+                    <p>This project is built with the intention of serving the community of viewers who regularly follow Sandeep Maheshwari Sir's content and teachings.</p>
+
+                    <h3>Transparency &amp; Disclaimer</h3>
+                    <ul>
+                        <li>This website is an independent fan-made project</li>
+                        <li>Zero intention of earning money from the content</li>
+                        <li>Not created for scams, fraud, impersonation, or misleading activities</li>
+                        <li>I do not claim ownership of any original video, audio, or branding</li>
+                        <li>All rights to original content belong to their respective owners</li>
+                        <li>Created solely for informational and tracking purposes as a fan initiative</li>
+                    </ul>
+                    <p>Respecting creators and maintaining transparency is extremely important to me.</p>
+
+                    <h3>Not Affiliated With the Official Channel</h3>
+                    <p>This website is not officially affiliated with, endorsed by, or managed by Sandeep Maheshwari Sir or his official team. If any official representative has concerns, I will fully cooperate and take immediate action wherever necessary.</p>
+
+                    <h3>Privacy &amp; User Trust</h3>
+                    <ul>
+                        <li>No misleading claims</li>
+                        <li>No fake promotions</li>
+                        <li>No spam activity</li>
+                        <li>No hidden scams</li>
+                        <li>No misuse of visitor data</li>
+                    </ul>
+
+                    <h3>Contact Me</h3>
+                    <p>For issues, suggestions, feedback, corrections, or copyright concerns:</p>
+                    <div class="contact-email-block">
+                        <i class="bx bx-envelope" aria-hidden="true"></i>
+                        <a href="mailto:smdeletedvideos@gmail.com">smdeletedvideos@gmail.com</a>
+                    </div>
+
+                    <hr class="contact-divider">
+
+                    <!-- Milestone card -->
+                    <div class="milestone-card">
+                        <div class="milestone-icon"><i class="bx bx-trophy"></i></div>
+                        <div>
+                            <strong>Tracking Since May 2026</strong>
+                            <p>This platform has been actively monitoring Sandeep Maheshwari's YouTube channel in real-time since May 2026, ensuring no video goes unnoticed.</p>
+                        </div>
+                    </div>
+
+                    <p class="contact-footer-note">
+                        I genuinely appreciate every visitor and fellow fan who uses this platform.<br>
+                        <em>Thank you for your support — built with ❤️ and respect.</em>
+                    </p>
+
+                </div>
+            </section>
+
+        </div><!-- /.container -->
     </main>
 
-    <!-- Modal for Deleted Video Details -->
-    <div id="video-modal" class="modal">
+    <!-- ░░ FOOTER ░░ -->
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <img src="images/logo.png" alt="SMDV Logo" class="footer-logo">
+                <span>SMDV Tracker</span>
+            </div>
+            <p class="footer-desc">An independent fan-made platform tracking Sandeep Maheshwari's YouTube channel in real-time since May 2026.</p>
+            <div class="footer-links">
+                <a href="https://www.youtube.com/@SandeepSeminars" target="_blank" rel="noopener noreferrer">
+                    <i class="bx bxl-youtube"></i> Official Channel
+                </a>
+                <a href="mailto:smdeletedvideos@gmail.com">
+                    <i class="bx bx-envelope"></i> Contact
+                </a>
+            </div>
+            <p class="footer-copy">© 2026 SMDV Tracker · Fan-made · Not affiliated with Sandeep Maheshwari</p>
+        </div>
+    </footer>
+
+    <!-- Scroll to Top -->
+    <button class="scroll-top" id="scroll-top" aria-label="Scroll to top">
+        <i class="bx bx-chevron-up"></i>
+    </button>
+
+    <!-- ░░ MODAL ░░ -->
+    <div id="video-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-content">
-            <span class="close-modal">&times;</span>
+            <button class="close-modal" id="close-modal-btn" aria-label="Close modal">
+                <i class="bx bx-x" aria-hidden="true"></i>
+            </button>
             <div id="modal-body">
-                <!-- Details injected here -->
+                <!-- Injected by JS -->
             </div>
         </div>
     </div>
