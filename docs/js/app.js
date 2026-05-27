@@ -224,20 +224,27 @@ function renderGrid() {
         return;
     }
 
-    let showMore = false;
-    if (currentTab === "active" && data.length > 12) {
-        data     = data.slice(0, 12);
-        showMore = true;
-    }
+    // ── Render ALL cards; hide overflow (index ≥ 12) by default ──
+    const VISIBLE_LIMIT = 12;
+    const hasOverflow   = currentTab === "active" && data.length > VISIBLE_LIMIT;
 
-    data.forEach(video => {
+    data.forEach((video, index) => {
         const card = document.createElement("div");
         card.className = "card";
         card.setAttribute("role", "article");
 
+        // Tag & hide cards beyond the default limit
+        if (hasOverflow && index >= VISIBLE_LIMIT) {
+            card.dataset.overflow = "true";
+            card.style.display = "none";
+        }
+
         if (currentTab === "active") {
             /* ── Active Video Card ── */
-            const thumbUrl = `https://img.youtube.com/vi/${video.video_id}/maxresdefault.jpg`;
+            // Use hqdefault as primary — it ALWAYS returns a real thumbnail.
+            // maxresdefault silently returns a tiny grey image (200 OK) for older videos,
+            // so onerror never fires for it — making it useless as a src.
+            const thumbUrl = `https://img.youtube.com/vi/${video.video_id}/hqdefault.jpg`;
             const dateStr  = formatDate(video.upload_time, true);
 
             card.innerHTML = `
@@ -245,7 +252,8 @@ function renderGrid() {
                     <img src="${thumbUrl}"
                          alt="${escapeHtml(video.title)} thumbnail"
                          loading="lazy"
-                         onerror="this.src='https://placehold.co/640x360/0f0f1e/6c63ff?text=SMDV'">
+                         data-videoid="${video.video_id}"
+                         onerror="thumbFallback(this,'${video.video_id}','active')">
                     <div class="play-overlay" aria-hidden="true">
                         <div class="play-btn"><i class='bx bx-play'></i></div>
                     </div>
@@ -268,9 +276,12 @@ function renderGrid() {
 
         } else {
             /* ── Deleted Video Card ── */
-            const thumbUrl = video.backup_video_id
-                ? `https://img.youtube.com/vi/${video.backup_video_id}/maxresdefault.jpg`
-                : `https://placehold.co/640x360/0f0f1e/ff4f6a?text=Deleted`;
+            const backupId = video.backup_video_id || "";
+            // hqdefault is always a real thumbnail; fall back to placeholder if no backup
+            const thumbUrl = backupId
+                ? `https://img.youtube.com/vi/${backupId}/hqdefault.jpg`
+                : `https://placehold.co/640x360/1a0010/ff4f6a?text=No+Backup`;
+            const fallbackId = backupId || video.video_id;
             const dateStr  = formatDate(video.original_upload_time, true);
 
             card.innerHTML = `
@@ -278,7 +289,7 @@ function renderGrid() {
                     <img src="${thumbUrl}"
                          alt="${escapeHtml(video.title)} thumbnail"
                          loading="lazy"
-                         onerror="this.src='https://placehold.co/640x360/0f0f1e/ff4f6a?text=Deleted'">
+                         onerror="thumbFallback(this,'${fallbackId}','deleted')">
                     <div class="play-overlay" aria-hidden="true">
                         <div class="play-btn" style="background:var(--danger);">
                             <i class='bx bx-info-circle'></i>
@@ -308,10 +319,11 @@ function renderGrid() {
         grid.appendChild(card);
     });
 
-    /* ── View More Button ── */
-    if (showMore) {
+    /* ── View More Button (shown only when no search is active) ── */
+    if (hasOverflow) {
         const wrap = document.createElement("div");
         wrap.className = "view-more-wrap";
+        wrap.id = "view-more-wrap";
         wrap.innerHTML = `
             <a href="https://www.youtube.com/@SandeepSeminars/videos"
                target="_blank"
@@ -396,6 +408,34 @@ function escapeHtml(str) {
         .replace(/'/g,  "&#039;");
 }
 
+/**
+ * Thumbnail error cascade.
+ * We now use hqdefault.jpg as the PRIMARY src (always a real image).
+ * If even that fails (network error etc.), we try lower qualities then placeholder.
+ */
+function thumbFallback(img, videoId, type) {
+    const placeholder = type === "deleted"
+        ? "https://placehold.co/640x360/1a0010/ff4f6a?text=No+Backup"
+        : "https://placehold.co/640x360/0f0f1e/6c63ff?text=SMDV";
+
+    // hqdefault is already loaded as primary; try lower quality on error
+    const fallbacks = [
+        `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+        `https://img.youtube.com/vi/${videoId}/default.jpg`,
+        placeholder
+    ];
+
+    let idx = 0;
+    img.onerror = function () {
+        if (idx < fallbacks.length) {
+            img.src = fallbacks[idx++];
+        } else {
+            img.onerror = null; // stop any loop
+        }
+    };
+}
+
 /* ── Live Search ──────────────────────────────────────────── */
 function setupSearch() {
     const input     = document.getElementById("search-input");
@@ -434,22 +474,42 @@ function resetSearch() {
 }
 
 function filterCards(query) {
-    const grid  = document.getElementById("video-grid");
-    const cards = grid.querySelectorAll(".card");
-    const q     = query.toLowerCase();
+    const grid      = document.getElementById("video-grid");
+    const cards     = grid.querySelectorAll(".card");
+    const viewMore  = document.getElementById("view-more-wrap");
+    const q         = query.toLowerCase().trim();
+    const isSearching = q.length > 0;
 
     let visibleCount = 0;
+
     cards.forEach(card => {
-        const titleEl = card.querySelector(".card-title");
+        const titleEl   = card.querySelector(".card-title");
         if (!titleEl) return;
-        const matches = !q || titleEl.textContent.toLowerCase().includes(q);
-        card.style.display = matches ? "" : "none";
-        if (matches) visibleCount++;
+
+        const isOverflow = card.dataset.overflow === "true";
+        const matches    = !isSearching || titleEl.textContent.toLowerCase().includes(q);
+
+        if (isSearching) {
+            // Search mode: show ALL matching cards regardless of overflow
+            card.style.display = matches ? "" : "none";
+        } else {
+            // Default mode: restore overflow cards to hidden, show the rest
+            card.style.display = isOverflow ? "none" : "";
+        }
+
+        if (matches || !isSearching) {
+            if (!isOverflow || isSearching) visibleCount++;
+        }
     });
 
-    // Show/hide empty state
+    // Show/hide the View More button — hide it while searching
+    if (viewMore) {
+        viewMore.style.display = isSearching ? "none" : "";
+    }
+
+    // Empty state message
     let emptyMsg = grid.querySelector(".search-empty");
-    if (visibleCount === 0 && q) {
+    if (isSearching && visibleCount === 0) {
         if (!emptyMsg) {
             emptyMsg = document.createElement("p");
             emptyMsg.className = "search-empty";
@@ -460,6 +520,14 @@ function filterCards(query) {
         emptyMsg.textContent = `No videos found for "${query}".`;
     } else if (emptyMsg) {
         emptyMsg.remove();
+    }
+
+    // Update result count hint in search box when actively searching
+    const hint = document.getElementById("search-hint");
+    if (hint) {
+        hint.textContent = isSearching
+            ? `${visibleCount} result${visibleCount !== 1 ? "s" : ""} found across all videos`
+            : "";
     }
 }
 
