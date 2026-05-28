@@ -134,6 +134,103 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
         print(f"CRITICAL ERROR during video upload: {e}")
         return None
 
+def get_youtube_client():
+    """Build and return an authenticated YouTube client."""
+    client_id = os.getenv("YOUTUBE_CLIENT_ID")
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+    if not all([client_id, client_secret, refresh_token]):
+        return None
+    credentials = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret
+    )
+    return build("youtube", "v3", credentials=credentials)
+
+def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run):
+    """
+    Checks if every backup video marked 'Backed Up' in the sheet still
+    exists on the backup YouTube channel. If YouTube deleted any of them
+    (copyright strike, enforcement, etc.), this immediately re-uploads them
+    in the same run. Returns the updated quota_used count.
+    """
+    print("Verifying backup videos still exist on YouTube...")
+    youtube = get_youtube_client()
+    if not youtube:
+        print("WARNING: YouTube credentials missing — skipping backup verification.")
+        return quota_used
+
+    # Collect all backup video IDs that we think are 'Backed Up'
+    to_check = {
+        vid: data["backup_video_id"]
+        for vid, data in db_active_videos.items()
+        if data.get("backup_status") == "Backed Up" and data.get("backup_video_id")
+    }
+
+    if not to_check:
+        print("No backed-up videos to verify.")
+        return quota_used
+
+    # YouTube API allows checking up to 50 video IDs at once
+    backup_ids = list(to_check.values())
+    existing_backup_ids = set()
+    for i in range(0, len(backup_ids), 50):
+        chunk = backup_ids[i:i+50]
+        try:
+            resp = youtube.videos().list(part="id", id=",".join(chunk)).execute()
+            for item in resp.get("items", []):
+                existing_backup_ids.add(item["id"])
+        except Exception as e:
+            print(f"ERROR checking backup video existence: {e}")
+            return quota_used  # If API fails, skip to be safe
+
+    # Find which backup videos were deleted by YouTube and re-upload them
+    for source_vid, backup_vid in to_check.items():
+        if backup_vid not in existing_backup_ids:
+            print(f"Backup video {backup_vid} was DELETED by YouTube — re-uploading now.")
+
+            # Reset in Google Sheets first
+            try:
+                requests.post(
+                    GOOGLE_SCRIPT_URL,
+                    json={"type": "reset_backup", "video_id": source_vid},
+                    timeout=15
+                )
+            except Exception as e:
+                print(f"ERROR resetting sheet for {source_vid}: {e}")
+
+            # Reset in local cache
+            db_active_videos[source_vid]["backup_status"] = "Pending"
+            db_active_videos[source_vid]["backup_video_id"] = ""
+            db_active_videos[source_vid]["backup_date"] = ""
+            backed_up_this_run.discard(source_vid)
+
+            # Re-upload immediately if quota allows
+            if quota_used < DAILY_UPLOAD_QUOTA:
+                vid_data = db_active_videos.get(source_vid, {})
+                title = vid_data.get("title", "Unknown Title")
+                url = vid_data.get("url", f"https://youtube.com/watch?v={source_vid}")
+                print(f"Re-uploading: {title}")
+                new_backup_id = download_and_backup(source_vid, url, title)
+                if new_backup_id:
+                    update_backup_in_sheet(source_vid, today_date, new_backup_id)
+                    db_active_videos[source_vid]["backup_status"] = "Backed Up"
+                    db_active_videos[source_vid]["backup_video_id"] = new_backup_id
+                    db_active_videos[source_vid]["backup_date"] = today_date
+                    backed_up_this_run.add(source_vid)
+                    quota_used += 1
+                    print(f"Successfully re-uploaded {source_vid} as backup {new_backup_id}")
+                else:
+                    print(f"Re-upload failed for {source_vid}. Will retry on next run.")
+            else:
+                print(f"Daily quota reached — {source_vid} will be re-uploaded on the next run.")
+
+    print("Backup verification complete.")
+    return quota_used
+
 def make_video_public(video_id):
     print(f"Making backup video {video_id} public...")
     try:
@@ -307,6 +404,13 @@ if now_ist.hour > 22 or (now_ist.hour == 22 and now_ist.minute >= 30):
 
 print(f"Daily Quota Used: {quota_used}/{DAILY_UPLOAD_QUOTA}")
 print(f"Already backed up (all time): {len(backed_up_this_run)} videos — will not re-upload these.")
+
+# ==========================================
+# CHECK: Did YouTube silently delete any of our backup videos?
+# ==========================================
+if not is_first_run:
+    quota_used = check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run)
+
 
 # ==========================================
 # 2. FETCH YOUTUBE DATA

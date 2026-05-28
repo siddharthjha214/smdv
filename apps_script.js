@@ -18,9 +18,31 @@ function doPost(e) {
     }
   }
   else if (data.type === "deleted_video") {
-    var sheet = ss.getSheetByName("Deleted/Private_Videos"); 
+    var deletedSheet = ss.getSheetByName("Deleted/Private_Videos"); 
     // Column order: Title, Original Upload Time, Deleted Time, Status, Video ID, URL, Backup Video ID
-    sheet.appendRow([data.title, data.original_upload_time, data.deleted_time, data.status, data.video_id, data.url, data.backup_video_id]);
+    deletedSheet.appendRow([data.title, data.original_upload_time, data.deleted_time, data.status, data.video_id, data.url, data.backup_video_id]);
+
+    // Remove the video from Active_Videos so the count stays accurate
+    var activeSheet = ss.getSheetByName("Active_Videos");
+    var activeValues = activeSheet.getDataRange().getValues();
+    for (var i = activeValues.length - 1; i >= 1; i--) {
+      if (activeValues[i][3] === data.video_id) {
+        activeSheet.deleteRow(i + 1); // i+1 because sheet rows are 1-indexed
+        break;
+      }
+    }
+  }
+  else if (data.type === "reset_backup") {
+    var sheet = ss.getSheetByName("Active_Videos");
+    var values = sheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][3] === data.video_id) {
+        sheet.getRange(i + 1, 6).setValue("Pending");  // Column F: Backup Status
+        sheet.getRange(i + 1, 7).setValue("");          // Column G: Backup Date
+        sheet.getRange(i + 1, 8).setValue("");          // Column H: Backup Video ID
+        break;
+      }
+    }
   }
   else if (data.type === "update_backup") {
     var sheet = ss.getSheetByName("Active_Videos");
