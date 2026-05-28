@@ -38,7 +38,11 @@ print("\nOpening web browser to generate Master Key / Refresh Token...")
 try:
     flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_config(
         client_config, 
-        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        scopes=[
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.readonly",
+            "https://www.googleapis.com/auth/youtube.force-ssl"
+        ]
     )
 
     # This opens your web browser!
