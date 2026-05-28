@@ -13,7 +13,7 @@ function doPost(e) {
       }
     }
     if (!exists) {
-      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", ""]);
+      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", "", 0]);
       sortSheet(); // Automatically sort when a new video is added
     }
   }
@@ -37,9 +37,19 @@ function doPost(e) {
     var values = sheet.getDataRange().getValues();
     for (var i = 1; i < values.length; i++) {
       if (values[i][3] === data.video_id) {
-        sheet.getRange(i + 1, 6).setValue("Pending");  // Column F: Backup Status
-        sheet.getRange(i + 1, 7).setValue("");          // Column G: Backup Date
-        sheet.getRange(i + 1, 8).setValue("");          // Column H: Backup Video ID
+        var attempts = (parseInt(values[i][8]) || 0) + 1; // Column I: Reupload Attempts
+        if (attempts >= 3) {
+          // Permanently stop retrying — YouTube keeps removing it (copyright enforcement)
+          sheet.getRange(i + 1, 6).setValue("YouTube Removed"); // Column F: Backup Status
+          sheet.getRange(i + 1, 7).setValue("");                 // Column G: Backup Date
+          sheet.getRange(i + 1, 8).setValue("");                 // Column H: Backup Video ID
+          sheet.getRange(i + 1, 9).setValue(attempts);           // Column I: Reupload Attempts
+        } else {
+          sheet.getRange(i + 1, 6).setValue("Pending");  // Column F: Backup Status
+          sheet.getRange(i + 1, 7).setValue("");          // Column G: Backup Date
+          sheet.getRange(i + 1, 8).setValue("");          // Column H: Backup Video ID
+          sheet.getRange(i + 1, 9).setValue(attempts);   // Column I: Reupload Attempts
+        }
         break;
       }
     }
@@ -95,7 +105,8 @@ function doGet(e) {
           "url": row[4],
           "backup_status": row[5] || "Pending",
           "backup_date": backup_date,
-          "backup_video_id": row[7] || ""
+          "backup_video_id": row[7] || "",
+          "reupload_attempts": parseInt(row[8]) || 0
         };
       }
     }

@@ -190,9 +190,12 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
     # Find which backup videos were deleted by YouTube and re-upload them
     for source_vid, backup_vid in to_check.items():
         if backup_vid not in existing_backup_ids:
-            print(f"Backup video {backup_vid} was DELETED by YouTube — re-uploading now.")
+            current_attempts = db_active_videos[source_vid].get("reupload_attempts", 0)
+            new_attempts = current_attempts + 1
 
-            # Reset in Google Sheets first
+            print(f"Backup video {backup_vid} was DELETED by YouTube (attempt {new_attempts}/3).")
+
+            # Reset in Google Sheets first (sheet will mark as YouTube Removed if attempts >= 3)
             try:
                 requests.post(
                     GOOGLE_SCRIPT_URL,
@@ -202,13 +205,21 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
             except Exception as e:
                 print(f"ERROR resetting sheet for {source_vid}: {e}")
 
-            # Reset in local cache
-            db_active_videos[source_vid]["backup_status"] = "Pending"
+            # Update local cache
+            db_active_videos[source_vid]["reupload_attempts"] = new_attempts
             db_active_videos[source_vid]["backup_video_id"] = ""
             db_active_videos[source_vid]["backup_date"] = ""
             backed_up_this_run.discard(source_vid)
 
-            # Re-upload immediately if quota allows
+            if new_attempts >= 3:
+                # YouTube keeps removing it (copyright enforcement) — stop trying
+                print(f"PERMANENTLY SKIPPING {source_vid} — YouTube has removed it {new_attempts} times. Marked as 'YouTube Removed'.")
+                db_active_videos[source_vid]["backup_status"] = "YouTube Removed"
+                continue  # Do NOT re-upload
+
+            # Reset local status to Pending and re-upload if quota allows
+            db_active_videos[source_vid]["backup_status"] = "Pending"
+
             if quota_used < DAILY_UPLOAD_QUOTA:
                 vid_data = db_active_videos.get(source_vid, {})
                 title = vid_data.get("title", "Unknown Title")
@@ -520,10 +531,14 @@ with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
         pending_video_to_backup = None
         for video_id in reversed(current_channel_ids):
             vid_data = db_active_videos.get(video_id, {})
-            if vid_data.get("backup_status") != "Backed Up" and video_id not in backed_up_this_run:
+            status = vid_data.get("backup_status", "Pending")
+            if status in ("Backed Up", "YouTube Removed"):
+                continue  # Skip already backed up or permanently removed videos
+            if video_id not in backed_up_this_run:
                 print(f"Found oldest pending video for backup: {video_id} — {vid_data.get('title', '')}")
                 pending_video_to_backup = video_id
                 break
+
         
         if pending_video_to_backup:
             video_id = pending_video_to_backup
