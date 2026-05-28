@@ -136,9 +136,9 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
 
 def get_youtube_client():
     """Build and return an authenticated YouTube client using the backup channel credentials."""
-    client_id = os.getenv("YOUTUBE_CLIENT_ID_2")
-    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET_2")
-    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN_2")
+    client_id = os.getenv("YOUTUBE_CLIENT_ID")
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
     if not all([client_id, client_secret, refresh_token]):
         return None
     credentials = Credentials(
