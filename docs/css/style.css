@@ -943,6 +943,18 @@ main {
 }
 .search-clear:hover { color: var(--danger); border-color: var(--danger); }
 
+.search-hint {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin-top: 0.5rem;
+    min-height: 1.1em;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+}
+
+
 /* ── Footer ─────────────────────────────────────────────────── */
 .site-footer {
     border-top: 1px solid var(--border);
@@ -1072,6 +1084,29 @@ main {
 }
 .tracking-since-badge i { color: var(--success); font-size: 1rem; }
 .tracking-since-badge strong { color: var(--accent); }
+
+/* ── Monitoring Notice (Deleted Videos tab) ─────────────────── */
+.monitoring-notice {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: linear-gradient(135deg, rgba(108,99,255,0.08), rgba(255,101,132,0.04));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.25rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+.monitoring-notice i {
+    font-size: 1.25rem;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+.monitoring-notice strong { color: var(--accent); font-weight: 700; }
+
 
 /* ── Milestone Card (Contact) ───────────────────────────────── */
 .milestone-card {

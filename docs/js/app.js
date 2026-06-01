@@ -216,8 +216,20 @@ function renderGrid() {
 
     let data = currentTab === "active" ? activeVideosData : deletedVideosData;
 
+    // ── Monitoring-since notice (deleted tab only) ──
+    if (currentTab === "deleted") {
+        const notice = document.createElement("div");
+        notice.className = "monitoring-notice";
+        notice.setAttribute("role", "note");
+        notice.innerHTML = `
+            <i class='bx bx-calendar-check' aria-hidden="true"></i>
+            <span>This tracker has been monitoring Sandeep Maheshwari's channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here.</span>
+        `;
+        grid.appendChild(notice);
+    }
+
     if (!data.length) {
-        grid.innerHTML = `
+        grid.innerHTML += `
             <p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:4rem 0;font-size:.95rem;">
                 No videos found.
             </p>`;
