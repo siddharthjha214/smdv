@@ -322,8 +322,16 @@ def is_already_backed_up(video_id):
 ydl_opts_fast = {
     "quiet": True,
     "extract_flat": "in_playlist",
-    "remote_components": ["ejs:npm"],
-    "extractor_args": {"youtube": ["player_client=android,web"]}
+    "extractor_args": {
+        # tv_embedded is significantly less rate-limited on datacenter IPs than android/web
+        "youtube": {"player_client": ["tv_embedded", "web"]}
+    },
+    "retries": 5,
+    "sleep_interval": 2,
+    "max_sleep_interval": 5,
+    "http_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    }
 }
 if os.path.exists("cookies.txt"):
     ydl_opts_fast["cookiefile"] = "cookies.txt"
@@ -427,181 +435,192 @@ if not is_first_run:
 # 2. FETCH YOUTUBE DATA
 # ==========================================
 print("Scanning channel...")
-with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
-    info = ydl.extract_info(CHANNEL_URL, download=False)
-    
-    current_channel_ids = []
-    new_video_processed = False
-    
-    for video in info["entries"]:
-        try:
-            video_id = video.get("id", "")
-            if not video_id:
-                continue
-                
-            current_channel_ids.append(video_id)
-            title = video.get("title", "Unknown Title")
-            url = f"https://youtube.com/watch?v={video_id}"
+info = None
+for _attempt in range(3):
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
+            info = ydl.extract_info(CHANNEL_URL, download=False)
+        break  # success — exit retry loop
+    except Exception as scan_err:
+        print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
+        if _attempt < 2:
+            import time; time.sleep(10)
+if info is None:
+    print("CRITICAL: Could not scan channel after 3 attempts. Exiting.")
+    exit(1)
 
-            # ==========================================
-            # PRIORITY #1: NEW VIDEO DETECTED
-            # ==========================================
-            if video_id not in db_active_videos:
-                print(f"New video found: {video_id}")
-                
-                # Deep extraction for exact time
-                with yt_dlp.YoutubeDL({"quiet": True}) as ydl_deep:
-                    deep_info = ydl_deep.extract_info(url, download=False)
-                    upload_date_raw = (
-                        deep_info.get("timestamp") or 
-                        deep_info.get("release_timestamp") or 
-                        deep_info.get("upload_date") or 
-                        deep_info.get("release_date")
-                    )
+current_channel_ids = []
+new_video_processed = False
 
-                upload_time = format_youtube_date(upload_date_raw)
+for video in info["entries"]:
+    try:
+        video_id = video.get("id", "")
+        if not video_id:
+            continue
+            
+        current_channel_ids.append(video_id)
+        title = video.get("title", "Unknown Title")
+        url = f"https://youtube.com/watch?v={video_id}"
 
-                # Send new video info to Google Sheets
-                requests.post(
-                    GOOGLE_SCRIPT_URL,
-                    json={
-                        "type": "new_video",
-                        "title": title,
-                        "upload_time": upload_time,
-                        "video_id": video_id,
-                        "url": url
-                    }
+        # ==========================================
+        # PRIORITY #1: NEW VIDEO DETECTED
+        # ==========================================
+        if video_id not in db_active_videos:
+            print(f"New video found: {video_id}")
+            
+            # Deep extraction for exact time
+            with yt_dlp.YoutubeDL({"quiet": True}) as ydl_deep:
+                deep_info = ydl_deep.extract_info(url, download=False)
+                upload_date_raw = (
+                    deep_info.get("timestamp") or 
+                    deep_info.get("release_timestamp") or 
+                    deep_info.get("upload_date") or 
+                    deep_info.get("release_date")
                 )
 
-                # Add to local cache so we don't treat it as missing later
-                db_active_videos[video_id] = {
+            upload_time = format_youtube_date(upload_date_raw)
+
+            # Send new video info to Google Sheets
+            requests.post(
+                GOOGLE_SCRIPT_URL,
+                json={
+                    "type": "new_video",
                     "title": title,
                     "upload_time": upload_time,
-                    "status": "Active",
-                    "url": url,
-                    "backup_status": "Pending",
-                    "backup_date": ""
+                    "video_id": video_id,
+                    "url": url
                 }
+            )
 
-                if not is_first_run:
-                    message = f"🚨 NEW VIDEO UPLOADED 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
-                    if BOT_TOKEN:
-                        requests.post(
-                            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                            data={"chat_id": CHAT_ID, "text": message}
-                        )
-                    
-                    # ⚠️ DUPLICATE GUARD: Check in-memory state + live sheet re-check before downloading
-                    if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
-                        if is_already_backed_up(video_id):  # Live re-check right before download
-                            backed_up_this_run.add(video_id)  # Sync in-memory state
-                        else:
-                            print("Prioritizing new video for backup...")
-                            backup_vid_id = download_and_backup(video_id, url, title)
-                            if backup_vid_id:
-                                sheet_updated = update_backup_in_sheet(video_id, today_date, backup_vid_id)
-                                if not sheet_updated:
-                                    print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
-                                    update_backup_in_sheet(video_id, today_date, backup_vid_id)  # One extra retry
-                                db_active_videos[video_id]["backup_status"] = "Backed Up"
-                                db_active_videos[video_id]["backup_date"] = today_date
-                                db_active_videos[video_id]["backup_video_id"] = backup_vid_id
-                                backed_up_this_run.add(video_id)
-                                quota_used += 1
-                                new_video_processed = True
-                            else:
-                                print(f"Download/upload failed for {video_id}. Will retry next run.")
-                    elif video_id in backed_up_this_run:
-                        print(f"SKIPPED: {video_id} is already marked as Backed Up — preventing duplicate upload.")
-                    else:
-                        print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup new video tomorrow.")
-                else:
-                    print("(Skipped Telegram notification & Backup because this is the first initial setup run)")
+            # Add to local cache so we don't treat it as missing later
+            db_active_videos[video_id] = {
+                "title": title,
+                "upload_time": upload_time,
+                "status": "Active",
+                "url": url,
+                "backup_status": "Pending",
+                "backup_date": ""
+            }
 
-        except Exception as e:
-            print("ERROR on video parsing:", e)
-
-    # ==========================================
-    # PRIORITY #2: BACKLOG DOWNLOADS (oldest first — 2012 → present)
-    # ==========================================
-    if not is_first_run and not new_video_processed and quota_used < DAILY_BACKLOG_QUOTA:
-        print("Checking for backlog videos to backup (oldest first)...")
-        
-        # Go through ALL videos oldest→newest (YouTube returns newest first, so we reverse)
-        pending_video_to_backup = None
-        for video_id in reversed(current_channel_ids):
-            vid_data = db_active_videos.get(video_id, {})
-            status = vid_data.get("backup_status", "Pending")
-            if status in ("Backed Up", "YouTube Removed"):
-                continue  # Skip already backed up or permanently removed videos
-            if video_id not in backed_up_this_run:
-                print(f"Found oldest pending video for backup: {video_id} — {vid_data.get('title', '')}")
-                pending_video_to_backup = video_id
-                break
-
-        
-        if pending_video_to_backup:
-            video_id = pending_video_to_backup
-            db_info = db_active_videos.get(video_id, {})
-            title = db_info.get("title", "Unknown Title")
-            url = db_info.get("url", f"https://youtube.com/watch?v={video_id}")
-            
-            if is_already_backed_up(video_id):  # Live re-check before backlog download too
-                backed_up_this_run.add(video_id)
-            else:
-                backup_vid_id = download_and_backup(video_id, url, title)
-                if backup_vid_id:
-                    update_backup_in_sheet(video_id, today_date, backup_vid_id)
-                    backed_up_this_run.add(video_id)
-                    quota_used += 1
-        else:
-            print("No pending backlog videos found.")
-            
-        # We only process ONE backlog video per run to prevent GitHub Actions timeout!
-    elif quota_used >= DAILY_BACKLOG_QUOTA:
-        print(f"Daily backlog quota of {DAILY_BACKLOG_QUOTA} reached. Reserved 1 slot for new videos today.")
-
-    # ==========================================
-    # 3. CHECK FOR DELETED OR PRIVATE VIDEOS
-    # ==========================================
-    if not is_first_run:
-        print("Checking for deleted videos...")
-        for db_video_id, db_video_data in db_active_videos.items():
-            if db_video_id not in current_channel_ids:
-                print(f"Deleted/Private video found: {db_video_id}")
-                
-                original_title = db_video_data.get("title", "Unknown")
-                original_upload_time = db_video_data.get("upload_time", "Unknown")
-                video_url = db_video_data.get("url", f"https://youtube.com/watch?v={db_video_id}")
-                deleted_time = get_current_time()
-                status = "Deleted/Private"
-                backup_video_id = db_video_data.get("backup_video_id", "")
-                
-                # Automatically make the backup video public!
-                if backup_video_id:
-                    make_video_public(backup_video_id)
-                
-                # Send to Google Sheets
-                requests.post(
-                    GOOGLE_SCRIPT_URL,
-                    json={
-                        "type": "deleted_video",
-                        "title": original_title,
-                        "original_upload_time": original_upload_time,
-                        "deleted_time": deleted_time,
-                        "status": status,
-                        "video_id": db_video_id,
-                        "url": video_url,
-                        "backup_video_id": backup_video_id
-                    }
-                )
-
-                # Telegram Notification
-                message = f"❌ VIDEO DELETED OR MADE PRIVATE ❌\n\nOriginal Title:\n{original_title}\n\nOriginal Upload Date:\n{original_upload_time}\n\nDeleted Time:\n{deleted_time}\n\nURL:\n{video_url}"
+            if not is_first_run:
+                message = f"🚨 NEW VIDEO UPLOADED 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
                 if BOT_TOKEN:
                     requests.post(
                         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                         data={"chat_id": CHAT_ID, "text": message}
                     )
+                
+                # ⚠️ DUPLICATE GUARD: Check in-memory state + live sheet re-check before downloading
+                if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
+                    if is_already_backed_up(video_id):  # Live re-check right before download
+                        backed_up_this_run.add(video_id)  # Sync in-memory state
+                    else:
+                        print("Prioritizing new video for backup...")
+                        backup_vid_id = download_and_backup(video_id, url, title)
+                        if backup_vid_id:
+                            sheet_updated = update_backup_in_sheet(video_id, today_date, backup_vid_id)
+                            if not sheet_updated:
+                                print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
+                                update_backup_in_sheet(video_id, today_date, backup_vid_id)  # One extra retry
+                            db_active_videos[video_id]["backup_status"] = "Backed Up"
+                            db_active_videos[video_id]["backup_date"] = today_date
+                            db_active_videos[video_id]["backup_video_id"] = backup_vid_id
+                            backed_up_this_run.add(video_id)
+                            quota_used += 1
+                            new_video_processed = True
+                        else:
+                            print(f"Download/upload failed for {video_id}. Will retry next run.")
+                elif video_id in backed_up_this_run:
+                    print(f"SKIPPED: {video_id} is already marked as Backed Up — preventing duplicate upload.")
+                else:
+                    print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup new video tomorrow.")
+            else:
+                print("(Skipped Telegram notification & Backup because this is the first initial setup run)")
+
+    except Exception as e:
+        print("ERROR on video parsing:", e)
+
+# ==========================================
+# PRIORITY #2: BACKLOG DOWNLOADS (oldest first — 2012 → present)
+# ==========================================
+if not is_first_run and not new_video_processed and quota_used < DAILY_BACKLOG_QUOTA:
+    print("Checking for backlog videos to backup (oldest first)...")
+    
+    # Go through ALL videos oldest→newest (YouTube returns newest first, so we reverse)
+    pending_video_to_backup = None
+    for video_id in reversed(current_channel_ids):
+        vid_data = db_active_videos.get(video_id, {})
+        status = vid_data.get("backup_status", "Pending")
+        if status in ("Backed Up", "YouTube Removed"):
+            continue  # Skip already backed up or permanently removed videos
+        if video_id not in backed_up_this_run:
+            print(f"Found oldest pending video for backup: {video_id} — {vid_data.get('title', '')}")
+            pending_video_to_backup = video_id
+            break
+
+    
+    if pending_video_to_backup:
+        video_id = pending_video_to_backup
+        db_info = db_active_videos.get(video_id, {})
+        title = db_info.get("title", "Unknown Title")
+        url = db_info.get("url", f"https://youtube.com/watch?v={video_id}")
+        
+        if is_already_backed_up(video_id):  # Live re-check before backlog download too
+            backed_up_this_run.add(video_id)
+        else:
+            backup_vid_id = download_and_backup(video_id, url, title)
+            if backup_vid_id:
+                update_backup_in_sheet(video_id, today_date, backup_vid_id)
+                backed_up_this_run.add(video_id)
+                quota_used += 1
+    else:
+        print("No pending backlog videos found.")
+        
+    # We only process ONE backlog video per run to prevent GitHub Actions timeout!
+elif quota_used >= DAILY_BACKLOG_QUOTA:
+    print(f"Daily backlog quota of {DAILY_BACKLOG_QUOTA} reached. Reserved 1 slot for new videos today.")
+
+# ==========================================
+# 3. CHECK FOR DELETED OR PRIVATE VIDEOS
+# ==========================================
+if not is_first_run:
+    print("Checking for deleted videos...")
+    for db_video_id, db_video_data in db_active_videos.items():
+        if db_video_id not in current_channel_ids:
+            print(f"Deleted/Private video found: {db_video_id}")
+            
+            original_title = db_video_data.get("title", "Unknown")
+            original_upload_time = db_video_data.get("upload_time", "Unknown")
+            video_url = db_video_data.get("url", f"https://youtube.com/watch?v={db_video_id}")
+            deleted_time = get_current_time()
+            status = "Deleted/Private"
+            backup_video_id = db_video_data.get("backup_video_id", "")
+            
+            # Automatically make the backup video public!
+            if backup_video_id:
+                make_video_public(backup_video_id)
+            
+            # Send to Google Sheets
+            requests.post(
+                GOOGLE_SCRIPT_URL,
+                json={
+                    "type": "deleted_video",
+                    "title": original_title,
+                    "original_upload_time": original_upload_time,
+                    "deleted_time": deleted_time,
+                    "status": status,
+                    "video_id": db_video_id,
+                    "url": video_url,
+                    "backup_video_id": backup_video_id
+                }
+            )
+
+            # Telegram Notification
+            message = f"❌ VIDEO DELETED OR MADE PRIVATE ❌\n\nOriginal Title:\n{original_title}\n\nOriginal Upload Date:\n{original_upload_time}\n\nDeleted Time:\n{deleted_time}\n\nURL:\n{video_url}"
+            if BOT_TOKEN:
+                requests.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    data={"chat_id": CHAT_ID, "text": message}
+                )
 
 print("BOT COMPLETED SUCCESSFULLY")
