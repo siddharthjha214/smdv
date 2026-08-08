@@ -14,7 +14,7 @@ from googleapiclient.http import MediaFileUpload
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx4mICDCIPFqU8pINja2A7OZdmZczmeUsSsYgx3Ru1G8f0JoAzfO1lrtRlwmwi6n33U/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 
 IST = pytz.timezone("Asia/Kolkata")

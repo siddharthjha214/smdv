@@ -11,7 +11,7 @@ from datetime import datetime
 import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx4mICDCIPFqU8pINja2A7OZdmZczmeUsSsYgx3Ru1G8f0JoAzfO1lrtRlwmwi6n33U/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
 CACHE_FILE = "/tmp/channel_videos.json"
 DATES_CACHE = "/tmp/video_dates_full.json"
 IST = pytz.timezone("Asia/Kolkata")
