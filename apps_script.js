@@ -13,7 +13,7 @@ function doPost(e) {
       }
     }
     if (!exists) {
-      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", "", 0]);
+      sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", "", ""]);
       // NOTE: sortSheet() intentionally NOT called here — calling it on every insert
       // causes a race condition during bulk operations that wipes sheet data.
       // sortSheet() is called only on update_backup (rare) and bulk_restore.
