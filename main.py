@@ -323,8 +323,8 @@ ydl_opts_fast = {
     "quiet": True,
     "extract_flat": "in_playlist",
     "extractor_args": {
-        # tv_embedded is significantly less rate-limited on datacenter IPs than android/web
-        "youtube": {"player_client": ["tv_embedded", "web"]}
+        # tv client is less rate-limited on datacenter IPs than web alone
+        "youtube": {"player_client": ["mweb", "web"]}
     },
     "retries": 5,
     "sleep_interval": 2,
@@ -346,7 +346,7 @@ def download_and_backup(video_id, url, title):
         "quiet": True,
         "writethumbnail": True,
         # Fix: use correct dict-of-lists format for extractor_args
-        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
+        "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         }
@@ -468,7 +468,7 @@ scan_looks_valid = True  # will be re-evaluated after the scan loop
 ydl_opts_deep = {
     "quiet": True,
     "extractor_args": {
-        "youtube": {"player_client": ["tv_embedded", "web"]}
+        "youtube": {"player_client": ["mweb", "web"]}
     },
     "retries": 3,
     "sleep_interval": 2,
