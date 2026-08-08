@@ -345,8 +345,11 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
-        "remote_components": ["ejs:npm"],
-        "extractor_args": {"youtube": ["player_client=android,web"]}
+        # Fix: use correct dict-of-lists format for extractor_args
+        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        }
     }
     if os.path.exists("cookies.txt"):
         ydl_download_opts["cookiefile"] = "cookies.txt"
@@ -452,6 +455,31 @@ if info is None:
 current_channel_ids = []
 new_video_processed = False
 
+# ==========================================
+# SCAN SANITY CHECK — prevent mass false-deletion
+# ==========================================
+# How many videos does the sheet currently know about?
+db_known_count = len(db_active_videos)
+# We set this flag AFTER populating current_channel_ids (see after the loop below).
+# It controls whether the deleted-video section is allowed to run.
+scan_looks_valid = True  # will be re-evaluated after the scan loop
+
+# Deep extraction options (with cookies + anti-bot settings, matching ydl_opts_fast)
+ydl_opts_deep = {
+    "quiet": True,
+    "extractor_args": {
+        "youtube": {"player_client": ["tv_embedded", "web"]}
+    },
+    "retries": 3,
+    "sleep_interval": 2,
+    "max_sleep_interval": 5,
+    "http_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    }
+}
+if os.path.exists("cookies.txt"):
+    ydl_opts_deep["cookiefile"] = "cookies.txt"
+
 for video in info["entries"]:
     try:
         video_id = video.get("id", "")
@@ -468,29 +496,46 @@ for video in info["entries"]:
         if video_id not in db_active_videos:
             print(f"New video found: {video_id}")
             
-            # Deep extraction for exact time
-            with yt_dlp.YoutubeDL({"quiet": True}) as ydl_deep:
-                deep_info = ydl_deep.extract_info(url, download=False)
+            # Deep extraction for exact upload time.
+            # IMPORTANT: uses ydl_opts_deep (with cookies + anti-bot headers) to avoid bot-detection.
+            # Falls back to flat-scan date if deep extraction fails — video is still registered.
+            upload_date_raw = None
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts_deep) as ydl_deep:
+                    deep_info = ydl_deep.extract_info(url, download=False)
+                    upload_date_raw = (
+                        deep_info.get("timestamp") or 
+                        deep_info.get("release_timestamp") or 
+                        deep_info.get("upload_date") or 
+                        deep_info.get("release_date")
+                    )
+            except Exception as deep_err:
+                # Deep extraction failed (e.g. bot detection). Use the flat-scan date if present.
+                print(f"WARNING: Deep extraction failed for {video_id} ({deep_err}). Using flat-scan metadata.")
                 upload_date_raw = (
-                    deep_info.get("timestamp") or 
-                    deep_info.get("release_timestamp") or 
-                    deep_info.get("upload_date") or 
-                    deep_info.get("release_date")
+                    video.get("timestamp") or
+                    video.get("release_timestamp") or
+                    video.get("upload_date")
                 )
 
-            upload_time = format_youtube_date(upload_date_raw)
+            upload_time = format_youtube_date(upload_date_raw) if upload_date_raw else "Unknown"
 
-            # Send new video info to Google Sheets
-            requests.post(
-                GOOGLE_SCRIPT_URL,
-                json={
-                    "type": "new_video",
-                    "title": title,
-                    "upload_time": upload_time,
-                    "video_id": video_id,
-                    "url": url
-                }
-            )
+            # Register video in Google Sheets — happens even if deep extraction failed.
+            # This prevents the bot from treating the same video as "new" on every subsequent run.
+            try:
+                requests.post(
+                    GOOGLE_SCRIPT_URL,
+                    json={
+                        "type": "new_video",
+                        "title": title,
+                        "upload_time": upload_time,
+                        "video_id": video_id,
+                        "url": url
+                    },
+                    timeout=15
+                )
+            except Exception as sheet_err:
+                print(f"WARNING: Could not post new video {video_id} to sheet: {sheet_err}")
 
             # Add to local cache so we don't treat it as missing later
             db_active_videos[video_id] = {
@@ -505,10 +550,14 @@ for video in info["entries"]:
             if not is_first_run:
                 message = f"🚨 NEW VIDEO UPLOADED 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
                 if BOT_TOKEN:
-                    requests.post(
-                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                        data={"chat_id": CHAT_ID, "text": message}
-                    )
+                    try:
+                        requests.post(
+                            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                            data={"chat_id": CHAT_ID, "text": message},
+                            timeout=10
+                        )
+                    except Exception as tg_err:
+                        print(f"WARNING: Telegram notification failed: {tg_err}")
                 
                 # ⚠️ DUPLICATE GUARD: Check in-memory state + live sheet re-check before downloading
                 if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
@@ -583,7 +632,19 @@ elif quota_used >= DAILY_BACKLOG_QUOTA:
 # ==========================================
 # 3. CHECK FOR DELETED OR PRIVATE VIDEOS
 # ==========================================
-if not is_first_run:
+# SAFETY GUARD: Only run deleted-video detection if the channel scan looks complete.
+# If the scan returned far fewer videos than we know exist (e.g. yt-dlp was blocked
+# mid-scan and returned partial results), running this section would incorrectly mark
+# hundreds of videos as deleted — which is exactly what wiped the sheet.
+if db_known_count > 0 and len(current_channel_ids) < db_known_count * 0.5:
+    scan_looks_valid = False
+    print(
+        f"WARNING: Channel scan returned only {len(current_channel_ids)} videos but the sheet "
+        f"has {db_known_count}. This looks like a partial/failed scan — "
+        f"SKIPPING deleted-video detection to prevent false mass-deletion."
+    )
+
+if not is_first_run and scan_looks_valid:
     print("Checking for deleted videos...")
     for db_video_id, db_video_data in db_active_videos.items():
         if db_video_id not in current_channel_ids:
@@ -601,26 +662,34 @@ if not is_first_run:
                 make_video_public(backup_video_id)
             
             # Send to Google Sheets
-            requests.post(
-                GOOGLE_SCRIPT_URL,
-                json={
-                    "type": "deleted_video",
-                    "title": original_title,
-                    "original_upload_time": original_upload_time,
-                    "deleted_time": deleted_time,
-                    "status": status,
-                    "video_id": db_video_id,
-                    "url": video_url,
-                    "backup_video_id": backup_video_id
-                }
-            )
+            try:
+                requests.post(
+                    GOOGLE_SCRIPT_URL,
+                    json={
+                        "type": "deleted_video",
+                        "title": original_title,
+                        "original_upload_time": original_upload_time,
+                        "deleted_time": deleted_time,
+                        "status": status,
+                        "video_id": db_video_id,
+                        "url": video_url,
+                        "backup_video_id": backup_video_id
+                    },
+                    timeout=15
+                )
+            except Exception as del_err:
+                print(f"WARNING: Failed to post deleted-video to sheet for {db_video_id}: {del_err}")
 
             # Telegram Notification
             message = f"❌ VIDEO DELETED OR MADE PRIVATE ❌\n\nOriginal Title:\n{original_title}\n\nOriginal Upload Date:\n{original_upload_time}\n\nDeleted Time:\n{deleted_time}\n\nURL:\n{video_url}"
             if BOT_TOKEN:
-                requests.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    data={"chat_id": CHAT_ID, "text": message}
-                )
+                try:
+                    requests.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                        data={"chat_id": CHAT_ID, "text": message},
+                        timeout=10
+                    )
+                except Exception as tg_err:
+                    print(f"WARNING: Telegram notification failed for {db_video_id}: {tg_err}")
 
 print("BOT COMPLETED SUCCESSFULLY")
