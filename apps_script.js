@@ -14,8 +14,32 @@ function doPost(e) {
     }
     if (!exists) {
       sheet.appendRow([data.title, data.upload_time, "Active", data.video_id, data.url, "Pending", "", "", 0]);
-      sortSheet(); // Automatically sort when a new video is added
+      // NOTE: sortSheet() intentionally NOT called here — calling it on every insert
+      // causes a race condition during bulk operations that wipes sheet data.
+      // sortSheet() is called only on update_backup (rare) and bulk_restore.
     }
+  }
+  else if (data.type === "bulk_restore") {
+    // Bulk insert many videos at once — used by recovery script.
+    // Reads existing IDs once, appends all missing videos, then sorts ONCE at the end.
+    var sheet = ss.getSheetByName("Active_Videos");
+    var existingValues = sheet.getDataRange().getValues();
+    var existingIds = {};
+    for (var i = 1; i < existingValues.length; i++) {
+      if (existingValues[i][3]) existingIds[existingValues[i][3]] = true;
+    }
+    var videos = data.videos; // array of {title, upload_time, video_id, url}
+    var inserted = 0;
+    for (var j = 0; j < videos.length; j++) {
+      var v = videos[j];
+      if (v.video_id && !existingIds[v.video_id]) {
+        sheet.appendRow([v.title, v.upload_time, "Active", v.video_id, v.url, "Pending", "", "", 0]);
+        existingIds[v.video_id] = true;
+        inserted++;
+      }
+    }
+    if (inserted > 0) sortSheet(); // sort only ONCE after all inserts
+    return ContentService.createTextOutput(JSON.stringify({inserted: inserted}));
   }
   else if (data.type === "deleted_video") {
     var deletedSheet = ss.getSheetByName("Deleted/Private_Videos"); 
