@@ -10,7 +10,7 @@ import json, time, requests, os, yt_dlp
 from datetime import datetime
 import pytz
 
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw81BtuAqr6NlISRUHgazF7_Q3rFXmELbmDtg5h0oKtZrU8ZWvBLstzlXqJJdKwzZUG/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx4mICDCIPFqU8pINja2A7OZdmZczmeUsSsYgx3Ru1G8f0JoAzfO1lrtRlwmwi6n33U/exec"
 CACHE_FILE = "/tmp/channel_videos.json"
 IST = pytz.timezone("Asia/Kolkata")
 BATCH_SIZE = 50
