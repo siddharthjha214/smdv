@@ -4,7 +4,7 @@
    ============================================================ */
 
 const GOOGLE_SCRIPT_URL =
-    "https://script.google.com/macros/s/AKfycbw81BtuAqr6NlISRUHgazF7_Q3rFXmELbmDtg5h0oKtZrU8ZWvBLstzlXqJJdKwzZUG/exec";
+    "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec";
 
 let activeVideosData  = [];
 let deletedVideosData = [];
@@ -155,7 +155,14 @@ async function fetchData() {
         // Convert active map → sorted array
         activeVideosData = Object.entries(activeMap)
             .map(([id, data]) => ({ ...data, video_id: id }))
-            .sort((a, b) => new Date(b.upload_time) - new Date(a.upload_time));
+            .sort((a, b) => {
+                // Newest first; Unknown dates go to the bottom
+                const da = new Date(String(a.upload_time).replace(' IST',''));
+                const db = new Date(String(b.upload_time).replace(' IST',''));
+                const va = isNaN(da) ? 0 : da.getTime();
+                const vb = isNaN(db) ? 0 : db.getTime();
+                return vb - va;
+            });
 
         // Sort deleted newest first
         deletedVideosData.sort((a, b) =>

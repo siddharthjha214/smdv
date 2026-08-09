@@ -19,6 +19,22 @@ function doPost(e) {
       // sortSheet() is called only on update_backup (rare) and bulk_restore.
     }
   }
+  else if (data.type === "update_date") {
+    // Updates upload_time for an existing video ONLY if it is currently "Unknown" or blank.
+    // Safe to call repeatedly — will never overwrite a real date.
+    var sheet = ss.getSheetByName("Active_Videos");
+    var values = sheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][3] === data.video_id) {
+        var currentDate = values[i][1] ? values[i][1].toString().trim() : "";
+        if (currentDate === "" || currentDate === "Unknown") {
+          sheet.getRange(i + 1, 2).setValue(data.upload_time);
+        }
+        break;
+      }
+    }
+  }
+
   else if (data.type === "bulk_restore") {
     // Bulk insert many videos at once — used by recovery script.
     // Reads existing IDs once, appends all missing videos, then sorts ONCE at the end.
