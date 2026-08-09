@@ -1,0 +1,32 @@
+name: Backup Channel Audit
+
+on:
+  workflow_dispatch:  # Run manually only
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install google-api-python-client google-auth requests
+
+      - name: Run Backup Channel Audit
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID_2 }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET_2 }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_2 }}
+        run: python3 backup_audit.py
+
+      - name: Print full report
+        run: |
+          if [ -f /tmp/backup_audit.json ]; then
+            echo "=== FULL BACKUP AUDIT REPORT ==="
+            cat /tmp/backup_audit.json
+          fi
