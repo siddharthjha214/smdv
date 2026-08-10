@@ -1,10 +1,10 @@
-name: Backup Channel Audit
+name: Backup Channel Sync
 
 on:
   workflow_dispatch:  # Run manually only
 
 jobs:
-  audit:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,18 +15,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install google-api-python-client google-auth requests
+        run: pip install google-api-python-client google-auth requests pytz
 
-      - name: Run Backup Channel Audit
+      - name: Run Backup Channel Sync + Dedup
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID_2 }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET_2 }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_2 }}
         run: python3 backup_audit.py
 
-      - name: Print full report
-        run: |
-          if [ -f /tmp/backup_audit.json ]; then
-            echo "=== FULL BACKUP AUDIT REPORT ==="
-            cat /tmp/backup_audit.json
-          fi
+      - name: Upload report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-sync-report
+          path: backup_sync_report.json
+          retention-days: 7
