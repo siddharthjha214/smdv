@@ -51,6 +51,6 @@ jobs:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
           if [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" > cookies.txt
+            echo "$YOUTUBE_COOKIES" | base64 --decode > cookies.txt || echo "$YOUTUBE_COOKIES" > cookies.txt
           fi
           python main.py
