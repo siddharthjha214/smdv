@@ -345,8 +345,6 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
-        # Fix: use correct dict-of-lists format for extractor_args
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "mweb", "web", "tv", "default"]}},
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         }
