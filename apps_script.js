@@ -44,16 +44,19 @@ function doPost(e) {
     for (var i = 1; i < existingValues.length; i++) {
       if (existingValues[i][3]) existingIds[existingValues[i][3]] = true;
     }
-    var videos = data.videos; // array of {title, upload_time, video_id, url}
+    var videos = data.videos;
+    var rowsToInsert = [];
     var inserted = 0;
     for (var j = 0; j < videos.length; j++) {
       var v = videos[j];
       if (v.video_id && !existingIds[v.video_id]) {
-        sheet.appendRow([v.title, v.upload_time, "Active", v.video_id, v.url, "Pending", "", "", 0]);
+        rowsToInsert.push([v.title, v.upload_time, "Active", v.video_id, v.url, "Pending", "", "", 0]);
         existingIds[v.video_id] = true;
         inserted++;
       }
     }
+    if (rowsToInsert.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToInsert.length, 9).setValues(rowsToInsert);
     }
     return ContentService.createTextOutput(JSON.stringify({inserted: inserted}));
   }
