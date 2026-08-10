@@ -445,9 +445,20 @@ for _attempt in range(3):
             info = ydl.extract_info(CHANNEL_URL, download=False)
         break  # success — exit retry loop
     except Exception as scan_err:
+        err_str = str(scan_err).lower()
         print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
+        
+        # If the error is about cookies being invalid or badly formatted, delete the file and retry immediately
+        if "cookie" in err_str or "netscape format" in err_str:
+            print("Cookie error detected! Deleting corrupted cookies.txt and retrying without cookies...")
+            if os.path.exists("cookies.txt"):
+                os.remove("cookies.txt")
+            if "cookiefile" in ydl_opts_fast:
+                del ydl_opts_fast["cookiefile"]
+        
         if _attempt < 2:
-            import time; time.sleep(10)
+            import time; time.sleep(5)
+
 if info is None:
     print("CRITICAL: Could not scan channel after 3 attempts. Exiting.")
     exit(1)
