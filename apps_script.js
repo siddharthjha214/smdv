@@ -54,7 +54,7 @@ function doPost(e) {
         inserted++;
       }
     }
-    if (inserted > 0) sortSheet(); // sort only ONCE after all inserts
+    }
     return ContentService.createTextOutput(JSON.stringify({inserted: inserted}));
   }
   else if (data.type === "deleted_video") {
@@ -107,7 +107,6 @@ function doPost(e) {
         }
       }
     }
-    sortSheet(); // Automatically sort after status updates
   }
   
   return ContentService.createTextOutput("Success");
