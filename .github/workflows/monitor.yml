@@ -40,7 +40,8 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install -U "yt-dlp[default]" requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.zip
+          pip install requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib curl-cffi
 
       - name: Run Bot
         env:
