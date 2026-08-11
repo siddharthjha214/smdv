@@ -61,7 +61,11 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({inserted: inserted}));
   }
   else if (data.type === "deleted_video") {
-    var deletedSheet = ss.getSheetByName("Deleted/Private_Videos"); 
+    var deletedSheet = ss.getSheetByName("Deleted/Private_Videos");
+    if (!deletedSheet) {
+      deletedSheet = ss.insertSheet("Deleted/Private_Videos");
+      deletedSheet.appendRow(["Original Title", "Original Upload Date", "Deleted Detected Time", "Status", "Original Video ID", "Original URL", "Backup Video ID"]);
+    }
     // Column order: Title, Original Upload Time, Deleted Time, Status, Video ID, URL, Backup Video ID
     deletedSheet.appendRow([data.title, data.original_upload_time, data.deleted_time, data.status, data.video_id, data.url, data.backup_video_id]);
 
