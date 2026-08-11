@@ -111,6 +111,21 @@ function doPost(e) {
       }
     }
   }
+  else if (data.type === "force_pending") {
+    var sheet = ss.getSheetByName("Active_Videos");
+    var values = sheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][3] === data.video_id) {
+        sheet.getRange(i + 1, 6).setValue("Pending");
+        sheet.getRange(i + 1, 7).setValue("");
+        sheet.getRange(i + 1, 8).setValue("");
+        break;
+      }
+    }
+  }
+  else if (data.type === "sort_sheet") {
+    sortSheet();
+  }
   
   return ContentService.createTextOutput("Success");
 }

@@ -332,6 +332,8 @@ ydl_opts_fast = {
 }
 if os.path.exists("cookies.txt"):
     ydl_opts_fast["cookiefile"] = "cookies.txt"
+else:
+    ydl_opts_fast["cookiesfrombrowser"] = ("firefox",)
 
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
@@ -348,6 +350,9 @@ def download_and_backup(video_id, url, title):
     }
     if os.path.exists("cookies.txt"):
         ydl_download_opts["cookiefile"] = "cookies.txt"
+    else:
+        ydl_download_opts["cookiesfrombrowser"] = ("firefox",)
+        
     try:
         with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
             ydl_dl.download([url])
@@ -443,13 +448,16 @@ for _attempt in range(3):
         err_str = str(scan_err).lower()
         print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
         
-        # If the error is about cookies being invalid or badly formatted, delete the file and retry immediately
+        # If the error is about cookies being invalid or badly formatted, retry without cookies
         if "cookie" in err_str or "netscape format" in err_str:
-            print("Cookie error detected! Deleting corrupted cookies.txt and retrying without cookies...")
+            print("Cookie error detected! Retrying without cookies...")
             if os.path.exists("cookies.txt"):
-                os.remove("cookies.txt")
+                try: os.remove("cookies.txt")
+                except: pass
             if "cookiefile" in ydl_opts_fast:
                 del ydl_opts_fast["cookiefile"]
+            if "cookiesfrombrowser" in ydl_opts_fast:
+                del ydl_opts_fast["cookiesfrombrowser"]
         
         if _attempt < 2:
             import time; time.sleep(5)
@@ -483,6 +491,8 @@ ydl_opts_deep = {
 }
 if os.path.exists("cookies.txt"):
     ydl_opts_deep["cookiefile"] = "cookies.txt"
+else:
+    ydl_opts_deep["cookiesfrombrowser"] = ("firefox",)
 
 for video in info["entries"]:
     try:
@@ -695,5 +705,12 @@ if not is_first_run and scan_looks_valid:
                     )
                 except Exception as tg_err:
                     print(f"WARNING: Telegram notification failed for {db_video_id}: {tg_err}")
+
+# Trigger sheet sorting to ensure newest videos are always at the top
+try:
+    requests.post(GOOGLE_SCRIPT_URL, json={"type": "sort_sheet"}, timeout=15)
+    print("Triggered final sheet sort.")
+except Exception as e:
+    print(f"WARNING: Failed to trigger sheet sort: {e}")
 
 print("BOT COMPLETED SUCCESSFULLY")
