@@ -12,6 +12,21 @@ from googleapiclient.http import MediaFileUpload
 # SETTINGS
 # ==========================================
 
+def check_service_health():
+    print("Checking GitHub system status...")
+    try:
+        resp = requests.get("https://www.githubstatus.com/api/v2/status.json", timeout=10)
+        if resp.status_code == 200:
+            indicator = resp.json().get("status", {}).get("indicator", "none")
+            if indicator in ["major", "critical"]:
+                print(f"CRITICAL: GitHub is currently experiencing a {indicator} outage.")
+                print("Pausing bot operations until services stabilize.")
+                exit(0)
+    except Exception as e:
+        print(f"WARNING: Could not check GitHub status: {e}")
+
+check_service_health()
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
@@ -387,12 +402,23 @@ def download_and_backup(video_id, url, title):
 # 1. FETCH STATE FROM GOOGLE SHEETS
 # ==========================================
 print("Fetching current active videos from Google Sheets...")
-try:
-    response = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True)
-    db_active_videos = response.json()
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to get active videos from Google Sheets. Error: {e}")
-    db_active_videos = {}
+db_active_videos = None
+for attempt in range(5):
+    try:
+        response = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=30)
+        response.raise_for_status()
+        db_active_videos = response.json()
+        if not isinstance(db_active_videos, dict):
+            raise ValueError("Response is not a valid JSON dictionary")
+        break
+    except Exception as e:
+        print(f"Failed to get active videos (Attempt {attempt+1}/5). Error: {e}")
+        import time; time.sleep(5)
+
+if db_active_videos is None:
+    print("CRITICAL ERROR: Failed to get active videos from Google Sheets after multiple attempts.")
+    print("Aborting run to prevent data corruption (e.g. treating sheet as empty).")
+    exit(1)
 
 is_first_run = len(db_active_videos) == 0
 today_date = get_current_date()
