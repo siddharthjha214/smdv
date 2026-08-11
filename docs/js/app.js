@@ -152,21 +152,62 @@ async function fetchData() {
         const activeMap   = await activeRes.json();
         deletedVideosData = await deletedRes.json();
 
-        // Convert active map → sorted array
+        // Convert active map → array
         activeVideosData = Object.entries(activeMap)
-            .map(([id, data]) => ({ ...data, video_id: id }))
-            .sort((a, b) => {
-                // Newest first; Unknown dates go to the bottom
-                const da = new Date(String(a.upload_time).replace(' IST',''));
-                const db = new Date(String(b.upload_time).replace(' IST',''));
-                const va = isNaN(da) ? 0 : da.getTime();
-                const vb = isNaN(db) ? 0 : db.getTime();
-                return vb - va;
-            });
+            .map(([id, data]) => ({ ...data, video_id: id }));
+
+        // Fetch Live RSS feed for instant updates
+        try {
+            const rssUrl = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent("https://www.youtube.com/feeds/videos.xml?channel_id=UCBqFKDipsnzvJdt6UT0lMIg");
+            const rssRes = await fetch(rssUrl);
+            const rssData = await rssRes.json();
+            
+            if (rssData && rssData.items) {
+                rssData.items.forEach(item => {
+                    const videoId = item.link.split("v=")[1];
+                    const isDeleted = deletedVideosData.some(v => v.video_id === videoId);
+                    
+                    if (!activeMap[videoId] && !isDeleted) {
+                        // Instant active video!
+                        const validIso = item.pubDate.replace(" ", "T") + "Z";
+                        activeVideosData.push({
+                            video_id: videoId,
+                            title: item.title,
+                            upload_time: validIso,
+                            status: "Active",
+                            url: item.link,
+                            backup_status: "Pending Sync",
+                            backup_date: "",
+                            backup_video_id: ""
+                        });
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("RSS sync skipped", e);
+        }
+
+        // Sort active newest first
+        activeVideosData.sort((a, b) => {
+            const parseDate = (dstr) => {
+                if (!dstr || dstr === "Unknown" || dstr === "Unknown Date") return 0;
+                let s = String(dstr).trim();
+                if (s.includes("T") && s.endsWith("Z")) return new Date(s).getTime();
+                return new Date(s.replace(/ IST$/i,'')).getTime();
+            };
+            return parseDate(b.upload_time) - parseDate(a.upload_time);
+        });
 
         // Sort deleted newest first
-        deletedVideosData.sort((a, b) =>
-            new Date(b.deleted_time) - new Date(a.deleted_time));
+        deletedVideosData.sort((a, b) => {
+            const parseDate = (dstr) => {
+                if (!dstr || dstr === "Unknown" || dstr === "Unknown Date") return 0;
+                let s = String(dstr).trim();
+                if (s.includes("T") && s.endsWith("Z")) return new Date(s).getTime();
+                return new Date(s.replace(/ IST$/i,'')).getTime();
+            };
+            return parseDate(b.deleted_time) - parseDate(a.deleted_time);
+        });
 
         loading.style.display = "none";
         renderStats();
@@ -205,10 +246,27 @@ function renderStats() {
 // Dates are already stored as formatted strings like:
 //   "27 May 2026 11:30 PM IST"  (active upload_time)
 //   "27 May 2026 11:35 PM IST"  (deleted_time / original_upload_time)
-// We simply return them, trimming " IST" for compact card display.
+// Or ISO strings like "2026-08-05T18:30:00.000Z"
 function formatDate(dateStr, compact) {
-    if (!dateStr || dateStr === "Unknown" || dateStr === "") return "—";
-    const s = String(dateStr).trim();
+    if (!dateStr || dateStr === "Unknown" || dateStr === "Unknown Date" || dateStr === "") return "—";
+    let s = String(dateStr).trim();
+    
+    // Check if it's an ISO date string (e.g. 2026-08-05T18:30:00.000Z)
+    if (s.includes("T") && s.endsWith("Z")) {
+        const d = new Date(s);
+        if (!isNaN(d)) {
+            const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' }).format(d);
+            const month = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', month: 'long' }).format(d);
+            const year = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(d);
+            let time = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).format(d).toUpperCase();
+            
+            // Clean up any weird invisible characters Intl might insert
+            time = time.replace(/\u202F/g, ' '); 
+            
+            s = `${day} ${month} ${year} ${time} IST`;
+        }
+    }
+
     if (compact) {
         // Remove " IST" and time portion for card display → "27 May 2026"
         return s.replace(/ IST$/i, "").replace(/\s+\d{1,2}:\d{2}\s*(AM|PM)?$/i, "").trim();
