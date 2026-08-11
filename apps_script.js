@@ -286,9 +286,13 @@ function sortSheet() {
     return dateB - dateA;
   });
   
-  // Clear the existing contents from row 2 onwards
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
-  
-  // Write the sorted and deduplicated values back starting from row 2
-  sheet.getRange(2, 1, uniqueValues.length, sheet.getLastColumn()).setValues(uniqueValues);
-}
+  // Safe Write-Back: Don't clear the sheet first! Overwrite existing rows to prevent data loss.
+  if (uniqueValues.length > 0) {
+    sheet.getRange(2, 1, uniqueValues.length, sheet.getLastColumn()).setValues(uniqueValues);
+    
+    // Clear only the extra trailing rows if deduplication reduced the total row count
+    var leftoverRows = (lastRow - 1) - uniqueValues.length;
+    if (leftoverRows > 0) {
+      sheet.getRange(2 + uniqueValues.length, 1, leftoverRows, sheet.getLastColumn()).clearContent();
+    }
+  }
