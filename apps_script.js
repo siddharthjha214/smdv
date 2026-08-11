@@ -296,3 +296,4 @@ function sortSheet() {
       sheet.getRange(2 + uniqueValues.length, 1, leftoverRows, sheet.getLastColumn()).clearContent();
     }
   }
+}
