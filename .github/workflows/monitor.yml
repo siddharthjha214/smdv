@@ -2,8 +2,6 @@ name: YouTube Tracker
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"  # Every 30 minutes
 
 concurrency:
   group: youtube-tracker-bot
