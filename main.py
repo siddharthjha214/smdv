@@ -405,7 +405,7 @@ print("Fetching current active videos from Google Sheets...")
 db_active_videos = None
 for attempt in range(5):
     try:
-        response = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=30)
+        response = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=45)
         response.raise_for_status()
         db_active_videos = response.json()
         if not isinstance(db_active_videos, dict):
@@ -413,7 +413,9 @@ for attempt in range(5):
         break
     except Exception as e:
         print(f"Failed to get active videos (Attempt {attempt+1}/5). Error: {e}")
-        import time; time.sleep(5)
+        if attempt < 4:
+            import time
+            time.sleep(15)  # Let Google's servers cool down to avoid 404 anti-abuse triggers
 
 if db_active_videos is None:
     print("CRITICAL ERROR: Failed to get active videos from Google Sheets after multiple attempts.")
