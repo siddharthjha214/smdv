@@ -10,12 +10,22 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
 
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Fix APT mirrors (bypass broken Azure mirror)
+        run: |
+          # Replace the flaky Azure mirror with the reliable global Ubuntu archive.
+          # This prevents the 30-minute timeout when azure.archive.ubuntu.com is unreachable.
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+          # Set aggressive timeouts so apt never hangs for more than 30 seconds per host
+          echo 'Acquire::Retries "2";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -28,13 +38,20 @@ jobs:
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        id: setup-ffmpeg
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fallback FFmpeg install via APT
+        if: steps.setup-ffmpeg.outcome == 'failure'
         run: |
-          if ! command -v ffmpeg &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          else
-            echo "ffmpeg is already installed on the runner"
-          fi
+          echo "setup-ffmpeg action failed, falling back to apt..."
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Verify FFmpeg
+        run: ffmpeg -version
 
       - name: Install Python Dependencies
         run: |
