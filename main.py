@@ -31,6 +31,8 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
+CHANNEL_ID = "UCBqFKDipsnzvJdt6UT0lMIg"
+UPLOADS_PLAYLIST_ID = "UU" + CHANNEL_ID[2:]  # Uploads playlist = Channel ID with UC→UU
 
 IST = pytz.timezone("Asia/Kolkata")
 DAILY_UPLOAD_QUOTA = 6
@@ -164,6 +166,48 @@ def get_youtube_client():
         client_secret=client_secret
     )
     return build("youtube", "v3", credentials=credentials)
+
+def scan_channel_via_api():
+    """Scan all videos from the channel using YouTube Data API (no cookies/scraping needed)."""
+    print("Scanning channel via YouTube Data API...")
+    youtube = get_youtube_client()
+    if not youtube:
+        print("ERROR: YouTube API credentials missing — cannot scan via API.")
+        return None
+
+    all_videos = []
+    next_page_token = None
+
+    while True:
+        try:
+            request = youtube.playlistItems().list(
+                part="snippet",
+                playlistId=UPLOADS_PLAYLIST_ID,
+                maxResults=50,
+                pageToken=next_page_token
+            )
+            response = request.execute()
+
+            for item in response.get("items", []):
+                snippet = item.get("snippet", {})
+                video_id = snippet.get("resourceId", {}).get("videoId", "")
+                if video_id:
+                    all_videos.append({
+                        "id": video_id,
+                        "title": snippet.get("title", "Unknown Title"),
+                        "publishedAt": snippet.get("publishedAt", ""),
+                    })
+
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        except Exception as e:
+            print(f"ERROR during API channel scan: {e}")
+            return None
+
+    print(f"API scan complete: found {len(all_videos)} videos.")
+    return all_videos
 
 def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run):
     """
@@ -336,19 +380,17 @@ def is_already_backed_up(video_id):
 
 ydl_opts_fast = {
     "quiet": True,
-    "remote_components": "ejs:github",
     "extract_flat": "in_playlist",
     "retries": 5,
-    "sleep_interval": 2,
-    "max_sleep_interval": 5,
+    "sleep_interval": 3,
+    "max_sleep_interval": 8,
+    "impersonate": "chrome",
     "http_headers": {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
 }
 if os.path.exists("cookies.txt"):
     ydl_opts_fast["cookiefile"] = "cookies.txt"
-else:
-    ydl_opts_fast["cookiesfrombrowser"] = ("firefox",)
 
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
@@ -359,14 +401,13 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": True,
         "writethumbnail": True,
+        "impersonate": "chrome",
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
     }
     if os.path.exists("cookies.txt"):
         ydl_download_opts["cookiefile"] = "cookies.txt"
-    else:
-        ydl_download_opts["cookiesfrombrowser"] = ("firefox",)
         
     try:
         with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
@@ -466,32 +507,49 @@ if not is_first_run:
 # 2. FETCH YOUTUBE DATA
 # ==========================================
 print("Scanning channel...")
-info = None
-for _attempt in range(3):
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
-            info = ydl.extract_info(CHANNEL_URL, download=False)
-        break  # success — exit retry loop
-    except Exception as scan_err:
-        err_str = str(scan_err).lower()
-        print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
-        
-        # If the error is about cookies being invalid or badly formatted, retry without cookies
-        if "cookie" in err_str or "netscape format" in err_str:
-            print("Cookie error detected! Retrying without cookies...")
-            if os.path.exists("cookies.txt"):
-                try: os.remove("cookies.txt")
-                except: pass
-            if "cookiefile" in ydl_opts_fast:
-                del ydl_opts_fast["cookiefile"]
-            if "cookiesfrombrowser" in ydl_opts_fast:
-                del ydl_opts_fast["cookiesfrombrowser"]
-        
-        if _attempt < 2:
-            import time; time.sleep(5)
+channel_entries = []
 
-if info is None:
-    print("CRITICAL: Could not scan channel after 3 attempts. Exiting.")
+# Primary method: YouTube Data API (reliable, no cookies/IP issues)
+api_videos = scan_channel_via_api()
+if api_videos is not None and len(api_videos) > 0:
+    channel_entries = api_videos
+    print(f"Channel scan successful via API: {len(channel_entries)} videos found.")
+else:
+    # Fallback: yt-dlp scraping (may fail due to cookies/IP, but worth trying)
+    print("API scan failed or returned empty. Falling back to yt-dlp scraping...")
+    info = None
+    for _attempt in range(3):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
+                info = ydl.extract_info(CHANNEL_URL, download=False)
+            break  # success — exit retry loop
+        except Exception as scan_err:
+            err_str = str(scan_err).lower()
+            print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
+            
+            # If the error is about cookies being invalid or badly formatted, retry without cookies
+            if "cookie" in err_str or "netscape format" in err_str:
+                print("Cookie error detected! Retrying without cookies...")
+                if os.path.exists("cookies.txt"):
+                    try: os.remove("cookies.txt")
+                    except: pass
+                if "cookiefile" in ydl_opts_fast:
+                    del ydl_opts_fast["cookiefile"]
+                if "cookiesfrombrowser" in ydl_opts_fast:
+                    del ydl_opts_fast["cookiesfrombrowser"]
+            
+            if _attempt < 2:
+                import time; time.sleep(10)
+    
+    if info is not None and info.get("entries"):
+        channel_entries = [
+            {"id": v.get("id", ""), "title": v.get("title", "Unknown Title")}
+            for v in info["entries"]
+            if v.get("id")
+        ]
+
+if not channel_entries:
+    print("CRITICAL: Could not scan channel via API or yt-dlp. Exiting.")
     exit(1)
 
 current_channel_ids = []
@@ -509,20 +567,18 @@ scan_looks_valid = True  # will be re-evaluated after the scan loop
 # Deep extraction options (with cookies + anti-bot settings, matching ydl_opts_fast)
 ydl_opts_deep = {
     "quiet": True,
-    "remote_components": "ejs:github",
     "retries": 3,
-    "sleep_interval": 2,
-    "max_sleep_interval": 5,
+    "sleep_interval": 3,
+    "max_sleep_interval": 8,
+    "impersonate": "chrome",
     "http_headers": {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
 }
 if os.path.exists("cookies.txt"):
     ydl_opts_deep["cookiefile"] = "cookies.txt"
-else:
-    ydl_opts_deep["cookiesfrombrowser"] = ("firefox",)
 
-for video in info["entries"]:
+for video in channel_entries:
     try:
         video_id = video.get("id", "")
         if not video_id:
@@ -557,7 +613,8 @@ for video in info["entries"]:
                 upload_date_raw = (
                     video.get("timestamp") or
                     video.get("release_timestamp") or
-                    video.get("upload_date")
+                    video.get("upload_date") or
+                    video.get("publishedAt")
                 )
 
             upload_time = format_youtube_date(upload_date_raw) if upload_date_raw else "Unknown"
