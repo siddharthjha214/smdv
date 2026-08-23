@@ -395,11 +395,21 @@ if os.path.exists("cookies.txt"):
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
     temp_base = f"temp_video_{video_id}"
+
+    # Log cookie state so we can diagnose auth failures from the logs
+    if os.path.exists("cookies.txt"):
+        cookie_size = os.path.getsize("cookies.txt")
+        print(f"cookies.txt found ({cookie_size} bytes)")
+        if cookie_size < 100:
+            print("WARNING: cookies.txt is suspiciously small — may be empty or corrupt!")
+    else:
+        print("WARNING: No cookies.txt found! Download will likely fail on datacenter IPs.")
+
     ydl_download_opts = {
         "format": "bestvideo+bestaudio/best",   # No format restrictions — gets 4K/VP9 if available
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
-        "quiet": True,
+        "quiet": False,
         "writethumbnail": True,
         "impersonate": "chrome",
         "http_headers": {
@@ -408,36 +418,60 @@ def download_and_backup(video_id, url, title):
     }
     if os.path.exists("cookies.txt"):
         ydl_download_opts["cookiefile"] = "cookies.txt"
-        
+
+    # Try downloading — if it fails, retry once without impersonate (curl_cffi can
+    # conflict with certain cookie formats or cause TLS issues on some environments)
+    last_error = None
+    for attempt in range(2):
+        try:
+            with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
+                ydl_dl.download([url])
+            last_error = None
+            break  # success
+        except Exception as dl_err:
+            last_error = dl_err
+            err_msg = f"[{type(dl_err).__name__}] {dl_err}"
+            print(f"Download attempt {attempt + 1}/2 failed: {err_msg}")
+
+            if attempt == 0:
+                # Retry without impersonate — plain urllib fallback
+                print("Retrying download without impersonate (falling back to urllib)...")
+                ydl_download_opts.pop("impersonate", None)
+
+    if last_error is not None:
+        # Both attempts failed — clean up any partial files and bail
+        for partial in glob.glob(f"{temp_base}.*"):
+            try: os.remove(partial)
+            except: pass
+        print(f"Failed to backup video after 2 attempts: [{type(last_error).__name__}] {last_error}")
+        return None
+
+    # Download succeeded — locate files and upload
+    video_file = f"{temp_base}.mp4"
+    thumbnail_file = None
+
+    for file in glob.glob(f"{temp_base}.*"):
+        if not file.endswith(".mp4"):
+            thumbnail_file = file
+            break
+
     try:
-        with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
-            ydl_dl.download([url])
-        
-        video_file = f"{temp_base}.mp4"
-        thumbnail_file = None
-        
-        for file in glob.glob(f"{temp_base}.*"):
-            if not file.endswith(".mp4"):
-                thumbnail_file = file
-                break
-                
         if os.path.exists(video_file):
             backup_vid_id = upload_video_to_youtube(video_file, title, thumbnail_file)
-            
-            # Clean up local files
-            if os.path.exists(video_file):
-                os.remove(video_file)
-            if thumbnail_file and os.path.exists(thumbnail_file):
-                os.remove(thumbnail_file)
-                
             return backup_vid_id
         else:
             print(f"Failed to find downloaded video file {video_file}")
             return None
-            
-    except Exception as backup_error:
-        print(f"Failed to backup video: {backup_error}")
-        return None
+    finally:
+        # Always clean up local files, even if upload fails
+        if os.path.exists(video_file):
+            os.remove(video_file)
+        if thumbnail_file and os.path.exists(thumbnail_file):
+            os.remove(thumbnail_file)
+        # Clean up any other leftover temp files (e.g. .part, .webp converted .jpg)
+        for leftover in glob.glob(f"{temp_base}*"):
+            try: os.remove(leftover)
+            except: pass
 
 # ==========================================
 # 1. FETCH STATE FROM GOOGLE SHEETS
