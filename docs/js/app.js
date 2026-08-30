@@ -25,16 +25,19 @@ function setupThemeToggle() {
     const html  = document.documentElement;
 
     const saved = localStorage.getItem("theme");
-    if (saved === "light") {
+    if (saved === "dark") {
+        html.setAttribute("data-theme", "dark");
+        icon.className = "bx bx-sun";
+    } else {
         html.setAttribute("data-theme", "light");
         icon.className = "bx bx-moon";
     }
 
     btn.addEventListener("click", () => {
-        const isDark = html.getAttribute("data-theme") === "dark";
-        html.setAttribute("data-theme", isDark ? "light" : "dark");
-        icon.className = isDark ? "bx bx-moon" : "bx bx-sun";
-        localStorage.setItem("theme", isDark ? "light" : "dark");
+        const isLight = html.getAttribute("data-theme") === "light";
+        html.setAttribute("data-theme", isLight ? "dark" : "light");
+        icon.className = isLight ? "bx bx-sun" : "bx bx-moon";
+        localStorage.setItem("theme", isLight ? "dark" : "light");
     });
 }
 
