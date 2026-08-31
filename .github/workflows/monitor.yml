@@ -81,11 +81,21 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_2 }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
-          if [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" | base64 --decode > cookies.txt || echo "$YOUTUBE_COOKIES" > cookies.txt
-            echo "cookies.txt created: $(wc -c < cookies.txt) bytes, $(wc -l < cookies.txt) lines"
-            head -1 cookies.txt  # Show first line to verify Netscape format
-          else
-            echo "WARNING: YOUTUBE_COOKIES secret is not set — downloads will fail!"
-          fi
+          python3 -c '
+          import os, base64
+          raw = os.environ.get("YOUTUBE_COOKIES", "").strip()
+          if raw:
+              content = raw
+              try:
+                  decoded = base64.b64decode(raw, validate=False).decode("utf-8", errors="replace")
+                  if "# Netscape" in decoded or "\t" in decoded:
+                      content = decoded
+              except Exception:
+                  pass
+              with open("cookies.txt", "w") as f:
+                  f.write(content)
+              print(f"cookies.txt created: {len(content.encode(\"utf-8\"))} bytes, {len(content.splitlines())} lines")
+          else:
+              print("WARNING: YOUTUBE_COOKIES secret is not set — downloads will fail!")
+          '
           python main.py
