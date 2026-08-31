@@ -5,6 +5,8 @@ from datetime import datetime
 import os
 import glob
 import time
+import subprocess
+import json
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -199,8 +201,10 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
                 # Convert webp to jpg if needed (YouTube API doesn't accept webp)
                 if thumbnail_path.endswith(".webp"):
                     jpg_path = thumbnail_path.replace(".webp", ".jpg")
-                    import subprocess
-                    subprocess.run(["ffmpeg", "-y", "-i", thumbnail_path, jpg_path], check=True, capture_output=True)
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", thumbnail_path, "-q:v", "1", jpg_path],
+                        check=True, capture_output=True
+                    )
                     thumbnail_path = jpg_path
                 youtube.thumbnails().set(
                     videoId=uploaded_video_id,
@@ -459,6 +463,36 @@ ydl_opts_fast = {
 if os.path.exists("cookies.txt"):
     ydl_opts_fast["cookiefile"] = "cookies.txt"
 
+def log_video_quality(video_file):
+    """Log the actual video/audio quality using ffprobe."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", video_file],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            return
+        probe = json.loads(result.stdout)
+        for stream in probe.get("streams", []):
+            codec_type = stream.get("codec_type", "")
+            if codec_type == "video":
+                width = stream.get("width", "?")
+                height = stream.get("height", "?")
+                codec = stream.get("codec_name", "?")
+                fps = stream.get("r_frame_rate", "?")
+                bitrate = stream.get("bit_rate", "")
+                br_str = f" @ {int(bitrate)//1000}kbps" if bitrate else ""
+                print(f"  🎥 Video: {width}x{height} {codec}{br_str} ({fps} fps)")
+            elif codec_type == "audio":
+                codec = stream.get("codec_name", "?")
+                sample_rate = stream.get("sample_rate", "?")
+                bitrate = stream.get("bit_rate", "")
+                br_str = f" @ {int(bitrate)//1000}kbps" if bitrate else ""
+                channels = stream.get("channels", "?")
+                print(f"  🎧 Audio: {codec}{br_str} ({sample_rate}Hz, {channels}ch)")
+    except Exception as e:
+        print(f"  (Could not probe quality: {e})")
+
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
     temp_base = f"temp_video_{video_id}"
@@ -474,12 +508,16 @@ def download_and_backup(video_id, url, title):
 
     # Base options shared by all strategies
     base_opts = {
-        "format": "bestvideo+bestaudio/best",   # No format restrictions — gets 4K/VP9 if available
+        "format": "bestvideo+bestaudio/best",   # Highest quality video + audio streams
+        "format_sort": ["res", "vbr", "abr"],    # Explicitly sort: resolution first, then video bitrate, then audio bitrate
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
         "writethumbnail": True,
         "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
+        "postprocessors": [
+            {"key": "FFmpegThumbnailsConvertor", "format": "jpg"},  # Auto-convert thumbnails to max quality jpg
+        ],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
@@ -552,10 +590,20 @@ def download_and_backup(video_id, url, title):
     video_file = f"{temp_base}.mp4"
     thumbnail_file = None
 
+    # Log the quality of the downloaded video
+    if os.path.exists(video_file):
+        print(f"Download complete — Quality report for {video_id}:")
+        log_video_quality(video_file)
+
     for file in glob.glob(f"{temp_base}.*"):
         if not file.endswith(".mp4"):
             thumbnail_file = file
             break
+
+    # Log thumbnail info
+    if thumbnail_file and os.path.exists(thumbnail_file):
+        thumb_size = os.path.getsize(thumbnail_file)
+        print(f"  🖼️  Thumbnail: {thumbnail_file} ({thumb_size:,} bytes)")
 
     try:
         if os.path.exists(video_file):
