@@ -451,6 +451,7 @@ def is_already_backed_up(video_id):
 
 ydl_opts_fast = {
     "quiet": True,
+    "no_warnings": True,
     "extract_flat": "in_playlist",
     "retries": 5,
     "sleep_interval": 3,
@@ -513,6 +514,7 @@ def download_and_backup(video_id, url, title):
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
+        "no_warnings": True,                    # Clean terminal output: silence cosmetic cookie rotation warnings
         "writethumbnail": True,
         "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
         "postprocessors": [
@@ -752,6 +754,7 @@ scan_looks_valid = True  # will be re-evaluated after the scan loop
 # Deep extraction options (with cookies + anti-bot settings, matching ydl_opts_fast)
 ydl_opts_deep = {
     "quiet": True,
+    "no_warnings": True,
     "retries": 3,
     "sleep_interval": 3,
     "max_sleep_interval": 8,
