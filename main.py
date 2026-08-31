@@ -562,6 +562,9 @@ def download_and_backup(video_id, url, title):
             last_error = dl_err
             err_msg = f"[{type(dl_err).__name__}] {dl_err}"
             print(f"Download attempt {attempt + 1}/{total} failed: {err_msg}")
+            if "cookie" in str(dl_err).lower() or "netscape" in str(dl_err).lower():
+                print("Corrupted/invalid cookiefile detected — removing cookiefile for remaining attempts.")
+                base_opts.pop("cookiefile", None)
             if "Sign in to confirm" in str(dl_err) or "not a bot" in str(dl_err):
                 bot_detected = True
             # Clean up partial files before next attempt

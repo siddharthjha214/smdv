@@ -83,17 +83,28 @@ jobs:
         run: |
           python3 -c '
           import os, base64
+
           raw = os.environ.get("YOUTUBE_COOKIES", "").strip()
           if raw:
               content = raw
-              try:
-                  decoded = base64.b64decode(raw, validate=False).decode("utf-8", errors="replace")
-                  if "# Netscape" in decoded or "\t" in decoded:
-                      content = decoded
-              except Exception:
-                  pass
+              # Check if raw is already plain Netscape cookie text
+              if raw.startswith("#") or "\t.youtube.com\t" in raw or "\tyoutube.com\t" in raw:
+                  content = raw
+              else:
+                  try:
+                      decoded = base64.b64decode(raw).decode("utf-8", errors="replace")
+                      if decoded.startswith("#") or "\t" in decoded:
+                          content = decoded
+                  except Exception:
+                      content = raw
+
+              # Ensure Netscape header exists
+              if not content.startswith("# Netscape") and not content.startswith("# HTTP"):
+                  content = "# Netscape HTTP Cookie File\n" + content.lstrip()
+
               with open("cookies.txt", "w", encoding="utf-8") as f:
                   f.write(content)
+              
               size = len(content.encode("utf-8"))
               lines = len(content.splitlines())
               print(f"cookies.txt created: {size} bytes, {lines} lines")
