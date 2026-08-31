@@ -4,6 +4,7 @@ import pytz
 from datetime import datetime
 import os
 import glob
+import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -27,8 +28,74 @@ def check_service_health():
 
 check_service_health()
 
+def validate_cookies(cookie_file="cookies.txt"):
+    """Check if the cookie file contains the essential YouTube auth cookies and they haven't expired."""
+    if not os.path.exists(cookie_file):
+        return False, "Cookie file missing"
+
+    file_size = os.path.getsize(cookie_file)
+    if file_size < 100:
+        return False, f"Cookie file suspiciously small ({file_size} bytes)"
+
+    required_cookies = ["__Secure-1PSID", "LOGIN_INFO"]
+    with open(cookie_file, "r", errors="replace") as f:
+        content = f.read()
+
+    missing = [c for c in required_cookies if c not in content]
+    if missing:
+        return False, f"Missing critical cookies: {', '.join(missing)}"
+
+    # Check for expired cookies
+    now_ts = time.time()
+    for line in content.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7:
+            try:
+                expiry = int(parts[4])
+                cookie_name = parts[5]
+                if cookie_name in required_cookies and 0 < expiry < now_ts:
+                    return False, f"Cookie '{cookie_name}' has expired (expiry: {datetime.fromtimestamp(expiry).strftime('%Y-%m-%d')})"
+            except (ValueError, IndexError):
+                pass
+
+    return True, "OK"
+
+def send_cookie_alert(reason):
+    """Send a Telegram alert when cookies are invalid so the user knows to re-export."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        return
+    message = (
+        "⚠️ COOKIE ALERT ⚠️\n\n"
+        f"YouTube cookies are invalid:\n{reason}\n\n"
+        "The bot will attempt downloads using fallback strategies, "
+        "but you should re-export fresh cookies ASAP.\n\n"
+        "Remember: export cookies then CLOSE the browser — DO NOT log out!"
+    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": message},
+            timeout=10
+        )
+    except Exception:
+        pass
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
+
+# Validate cookies at startup
+if os.path.exists("cookies.txt"):
+    cookies_valid, cookie_reason = validate_cookies()
+    if cookies_valid:
+        print("Cookie validation: OK — auth cookies present and not expired.")
+    else:
+        print(f"WARNING: Cookie validation FAILED — {cookie_reason}")
+        send_cookie_alert(cookie_reason)
+else:
+    print("WARNING: No cookies.txt found! Downloads will likely fail on datacenter IPs.")
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 CHANNEL_ID = "UCBqFKDipsnzvJdt6UT0lMIg"
@@ -405,45 +472,77 @@ def download_and_backup(video_id, url, title):
     else:
         print("WARNING: No cookies.txt found! Download will likely fail on datacenter IPs.")
 
-    ydl_download_opts = {
+    # Base options shared by all strategies
+    base_opts = {
         "format": "bestvideo+bestaudio/best",   # No format restrictions — gets 4K/VP9 if available
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
         "writethumbnail": True,
-        "impersonate": "chrome",
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
     }
     if os.path.exists("cookies.txt"):
-        ydl_download_opts["cookiefile"] = "cookies.txt"
+        base_opts["cookiefile"] = "cookies.txt"
 
-    # Try downloading — if it fails, retry once without impersonate (curl_cffi can
-    # conflict with certain cookie formats or cause TLS issues on some environments)
+    # Multi-strategy fallback chain — each strategy targets a different YouTube
+    # bot-detection vector. If one fails, the next uses a different approach.
+    strategies = [
+        {
+            "name": "impersonate chrome (web client)",
+            "overrides": {"impersonate": "chrome"},
+        },
+        {
+            "name": "urllib fallback (web client, no impersonate)",
+            "overrides": {},
+        },
+        {
+            "name": "android player client",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["android"]}}},
+        },
+        {
+            "name": "ios player client",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
+        },
+    ]
+
+    total = len(strategies)
     last_error = None
-    for attempt in range(2):
+    bot_detected = False
+
+    for attempt, strategy in enumerate(strategies):
+        opts = {**base_opts, **strategy["overrides"]}
+        print(f"Download attempt {attempt + 1}/{total}: {strategy['name']}...")
         try:
-            with yt_dlp.YoutubeDL(ydl_download_opts) as ydl_dl:
+            with yt_dlp.YoutubeDL(opts) as ydl_dl:
                 ydl_dl.download([url])
             last_error = None
             break  # success
         except Exception as dl_err:
             last_error = dl_err
             err_msg = f"[{type(dl_err).__name__}] {dl_err}"
-            print(f"Download attempt {attempt + 1}/2 failed: {err_msg}")
-
-            if attempt == 0:
-                # Retry without impersonate — plain urllib fallback
-                print("Retrying download without impersonate (falling back to urllib)...")
-                ydl_download_opts.pop("impersonate", None)
+            print(f"Download attempt {attempt + 1}/{total} failed: {err_msg}")
+            if "Sign in to confirm" in str(dl_err) or "not a bot" in str(dl_err):
+                bot_detected = True
+            # Clean up partial files before next attempt
+            for partial in glob.glob(f"{temp_base}.part*"):
+                try: os.remove(partial)
+                except: pass
 
     if last_error is not None:
-        # Both attempts failed — clean up any partial files and bail
+        # All strategies failed — clean up and alert
         for partial in glob.glob(f"{temp_base}.*"):
             try: os.remove(partial)
             except: pass
-        print(f"Failed to backup video after 2 attempts: [{type(last_error).__name__}] {last_error}")
+        print(f"Failed to backup video after {total} attempts: [{type(last_error).__name__}] {last_error}")
+
+        # Send Telegram alert if bot detection was the cause
+        if bot_detected:
+            send_cookie_alert(
+                f"All {total} download strategies failed for video {video_id} "
+                f"with bot detection. Cookies are likely expired — please re-export!"
+            )
         return None
 
     # Download succeeded — locate files and upload
