@@ -92,9 +92,11 @@ jobs:
                       content = decoded
               except Exception:
                   pass
-              with open("cookies.txt", "w") as f:
+              with open("cookies.txt", "w", encoding="utf-8") as f:
                   f.write(content)
-              print(f"cookies.txt created: {len(content.encode(\"utf-8\"))} bytes, {len(content.splitlines())} lines")
+              size = len(content.encode("utf-8"))
+              lines = len(content.splitlines())
+              print(f"cookies.txt created: {size} bytes, {lines} lines")
           else:
               print("WARNING: YOUTUBE_COOKIES secret is not set — downloads will fail!")
           '
