@@ -58,6 +58,11 @@ jobs:
           pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.zip
           pip install requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib curl-cffi
 
+      - name: Verify JS runtime for yt-dlp
+        run: |
+          echo "Deno version: $(deno --version | head -1)"
+          echo "yt-dlp version: $(yt-dlp --version)"
+
       - name: Setup Cloudflare WARP
         run: |
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg

@@ -479,6 +479,7 @@ def download_and_backup(video_id, url, title):
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
         "writethumbnail": True,
+        "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
@@ -488,6 +489,8 @@ def download_and_backup(video_id, url, title):
 
     # Multi-strategy fallback chain — each strategy targets a different YouTube
     # bot-detection vector. If one fails, the next uses a different approach.
+    # NOTE: android/ios clients do NOT support cookies, so they're useless on datacenter IPs.
+    # We only use clients that support cookies: web (default), mweb, tv_embedded.
     strategies = [
         {
             "name": "impersonate chrome (web client)",
@@ -498,12 +501,12 @@ def download_and_backup(video_id, url, title):
             "overrides": {},
         },
         {
-            "name": "android player client",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["android"]}}},
+            "name": "mweb player client (mobile web, supports cookies)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb"]}}},
         },
         {
-            "name": "ios player client",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
+            "name": "tv_embedded player client (supports cookies)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}},
         },
     ]
 
@@ -704,6 +707,7 @@ ydl_opts_deep = {
     "sleep_interval": 3,
     "max_sleep_interval": 8,
     "impersonate": "chrome",
+    "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
     "http_headers": {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
