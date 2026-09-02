@@ -541,28 +541,24 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-strategy fallback chain — each strategy targets full 1080p/4K HD resolution
-    # while bypassing bot challenges on cloud runners.
+    # Multi-strategy fallback chain — uses web_embedded client which bypasses
+    # YouTube bot verification challenges on cloud runners while delivering full 1080p HD.
     strategies = [
         {
-            "name": "tv_embedded client (1080p Full HD + high bitrate audio)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}},
+            "name": "web_embedded client (1080p Full HD + Deno challenge solver)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded"]}}},
         },
         {
-            "name": "all clients adaptive (1080p multi-stream)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["all"]}}},
+            "name": "web_embedded + android client (1080p Full HD adaptive)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "android"]}}},
         },
         {
-            "name": "android_creator client (1080p HD)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["android_creator", "android_testsuite"]}}},
+            "name": "web_embedded + web_safari client (1080p Full HD)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "web_safari"]}}},
         },
         {
-            "name": "standard web client (1080p with Deno JS challenge solver)",
-            "overrides": {},
-        },
-        {
-            "name": "fallback mobile client",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android"]}}},
+            "name": "android + web_embedded client (1080p Full HD fallback)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["android", "web_embedded"]}}},
         },
     ]
 
