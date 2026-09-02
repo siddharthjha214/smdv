@@ -432,18 +432,32 @@ def update_backup_in_sheet(video_id, today_date, backup_video_id=None, retries=3
     return False
 
 def is_already_backed_up(video_id):
-    """Live re-check of the sheet RIGHT before downloading. The definitive duplicate guard."""
+    """Live re-check of the sheet RIGHT before downloading. Falls back to verified in-memory state on timeout."""
+    # First check in-memory state
     try:
-        resp = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=15)
-        live_data = resp.json()
-        status = live_data.get(video_id, {}).get("backup_status", "Pending")
-        if status == "Backed Up":
-            print(f"LIVE SHEET CHECK: {video_id} is already 'Backed Up' — SKIPPING download to prevent duplicate.")
+        if db_active_videos and db_active_videos.get(video_id, {}).get("backup_status") == "Backed Up":
+            print(f"IN-MEMORY CHECK: {video_id} is already 'Backed Up' — SKIPPING.")
             return True
-        return False
+    except Exception:
+        pass
+
+    try:
+        resp = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=30)
+        if resp.status_code == 200:
+            live_data = resp.json()
+            if isinstance(live_data, dict):
+                status = live_data.get(video_id, {}).get("backup_status", "Pending")
+                if status == "Backed Up":
+                    print(f"LIVE SHEET CHECK: {video_id} is already 'Backed Up' — SKIPPING download to prevent duplicate.")
+                    return True
+                return False
     except Exception as e:
-        print(f"Live sheet check failed for {video_id}: {e}. Proceeding cautiously (will NOT download).")
-        return True  # Fail-safe: if we can't confirm, do NOT upload
+        print(f"Live sheet check network warning for {video_id}: {e}. Falling back to in-memory sheet state.")
+
+    # Fallback to in-memory state fetched at startup rather than aborting download
+    if db_active_videos and db_active_videos.get(video_id, {}).get("backup_status") == "Backed Up":
+        return True
+    return False
 
 # ==========================================
 # YOUTUBE OPTIONS
