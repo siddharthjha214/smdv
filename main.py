@@ -523,8 +523,9 @@ def download_and_backup(video_id, url, title):
 
     # Base options shared by all strategies
     base_opts = {
-        "format": "bestvideo+bestaudio/best",   # Highest quality video + audio streams
-        "format_sort": ["res", "vbr", "abr"],    # Explicitly sort: resolution first, then video bitrate, then audio bitrate
+        # Prioritize original/Hindi audio over AI auto-dubbed tracks (e.g. auto-generated English)
+        "format": "bestvideo+bestaudio[format_note*=original]/bestvideo+bestaudio[language=orig]/bestvideo+bestaudio[language=hi]/bestvideo+bestaudio[language_preference>=0]/bestvideo+bestaudio/best",
+        "format_sort": ["res", "vbr", "lang", "abr"],    # Sort by: resolution -> video bitrate -> original language -> audio bitrate
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
