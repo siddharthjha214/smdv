@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+cookies.txt
+secrets.sh
+temp_video_*
+*.mp4
+*.m4a
+*.webm
+*.jpg
+*.png
+.DS_Store
+.vscode/
+*.code-workspace

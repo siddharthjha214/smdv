@@ -1,9 +1,9 @@
 function doPost(e) {
   var data = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  
+
   if (data.type === "new_video") {
-    var sheet = ss.getSheetByName("Active_Videos"); 
+    var sheet = ss.getSheetByName("Active_Videos");
     var values = sheet.getDataRange().getValues();
     var exists = false;
     for (var i = 1; i < values.length; i++) {
@@ -58,7 +58,7 @@ function doPost(e) {
     if (rowsToInsert.length > 0) {
       sheet.getRange(sheet.getLastRow() + 1, 1, rowsToInsert.length, 9).setValues(rowsToInsert);
     }
-    return ContentService.createTextOutput(JSON.stringify({inserted: inserted}));
+    return ContentService.createTextOutput(JSON.stringify({ inserted: inserted }));
   }
   else if (data.type === "deleted_video") {
     var deletedSheet = ss.getSheetByName("Deleted/Private_Videos");
@@ -130,21 +130,21 @@ function doPost(e) {
   else if (data.type === "sort_sheet") {
     sortSheet();
   }
-  
+
   return ContentService.createTextOutput("Success");
 }
 
 function doGet(e) {
   var action = e.parameter.action;
-  
+
   if (action === "get_active_videos") {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Active_Videos");
     if (!sheet) return ContentService.createTextOutput(JSON.stringify({}));
-    
+
     var values = sheet.getDataRange().getValues();
     var result = {};
-    
+
     // Start at row 2 (index 1) assuming headers are in row 1
     for (var i = 1; i < values.length; i++) {
       var row = values[i];
@@ -171,7 +171,7 @@ function doGet(e) {
         };
       }
     }
-    
+
     // Add CORS headers to allow GitHub Pages frontend to fetch
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -180,10 +180,10 @@ function doGet(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Deleted/Private_Videos");
     if (!sheet) return ContentService.createTextOutput(JSON.stringify([]));
-    
+
     var values = sheet.getDataRange().getValues();
     var result = [];
-    
+
     // Start at row 2 assuming headers
     for (var i = 1; i < values.length; i++) {
       var row = values[i];
@@ -199,7 +199,7 @@ function doGet(e) {
         });
       }
     }
-    
+
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -210,9 +210,9 @@ function triggerGitHubAction() {
   var REPO_OWNER = "siddharthjha214";
   var REPO_NAME = "smdv";
   var WORKFLOW_ID = "monitor.yml";
-  
+
   var url = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/actions/workflows/" + WORKFLOW_ID + "/dispatches";
-  
+
   var options = {
     "method": "POST",
     "headers": {
@@ -224,7 +224,7 @@ function triggerGitHubAction() {
     }),
     "muteHttpExceptions": true
   };
-  
+
   var response = UrlFetchApp.fetch(url, options);
   Logger.log(response.getContentText());
 }
@@ -236,8 +236,8 @@ function triggerGitHubAction() {
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('YouTube Tracker')
-      .addItem('Sort Videos by Date (Newest to Oldest)', 'sortSheet')
-      .addToUi();
+    .addItem('Sort Videos by Date (Newest to Oldest)', 'sortSheet')
+    .addToUi();
 }
 
 function parseDate(dateStr) {
@@ -251,16 +251,16 @@ function sortSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Active_Videos");
   if (!sheet) return;
-  
+
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 2) return; 
-  
+  if (lastRow <= 2) return;
+
   var range = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
   var values = range.getValues();
-  
+
   var seenIds = {};
   var uniqueValues = [];
-  
+
   // 1. Filter out empty rows and deduplicate based on video_id (column D / index 3)
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
@@ -282,18 +282,18 @@ function sortSheet() {
       }
     }
   }
-  
+
   // 2. Sort descending: newest date first, oldest at the bottom
-  uniqueValues.sort(function(a, b) {
+  uniqueValues.sort(function (a, b) {
     var dateA = parseDate(a[1]);
     var dateB = parseDate(b[1]);
     return dateB - dateA;
   });
-  
+
   // Safe Write-Back: Don't clear the sheet first! Overwrite existing rows to prevent data loss.
   if (uniqueValues.length > 0) {
     sheet.getRange(2, 1, uniqueValues.length, sheet.getLastColumn()).setValues(uniqueValues);
-    
+
     // Clear only the extra trailing rows if deduplication reduced the total row count
     var leftoverRows = (lastRow - 1) - uniqueValues.length;
     if (leftoverRows > 0) {

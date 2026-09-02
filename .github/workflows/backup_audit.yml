@@ -6,6 +6,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,16 +17,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install google-api-python-client google-auth requests pytz
-
-      - name: Setup Cloudflare WARP
-        run: |
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ focal main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update && sudo apt-get install -y cloudflare-warp
-          warp-cli --accept-tos registration new
-          warp-cli --accept-tos connect
-          sleep 5
-          curl -sS https://cloudflare.com/cdn-cgi/trace | grep warp
 
       - name: Run Backup Channel Sync + Dedup
         env:
