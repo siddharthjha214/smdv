@@ -541,29 +541,28 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-strategy fallback chain — each strategy targets a different YouTube
-    # player client API (Android, iOS, MWeb, TV). Mobile and TV clients bypass
-    # the strict VisionOS/Web JS bot-detection on datacenter/cloud IPs.
+    # Multi-strategy fallback chain — each strategy targets full 1080p/4K HD resolution
+    # while bypassing bot challenges on cloud runners.
     strategies = [
         {
-            "name": "android + web client (resilient against bot challenges)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["android", "web"]}}},
+            "name": "tv_embedded client (1080p Full HD + high bitrate audio)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}},
         },
         {
-            "name": "ios player client (native mobile API)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
+            "name": "all clients adaptive (1080p multi-stream)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["all"]}}},
         },
         {
-            "name": "mweb player client (mobile web)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb"]}}},
+            "name": "android_creator client (1080p HD)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["android_creator", "android_testsuite"]}}},
         },
         {
-            "name": "tv_embedded player client (TV fallback)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_embedded", "tv"]}}},
-        },
-        {
-            "name": "standard web client (with Deno JS solver fallback)",
+            "name": "standard web client (1080p with Deno JS challenge solver)",
             "overrides": {},
+        },
+        {
+            "name": "fallback mobile client",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android"]}}},
         },
     ]
 
