@@ -111,4 +111,4 @@ jobs:
           else:
               print("WARNING: YOUTUBE_COOKIES secret is not set — downloads will fail!")
           '
-          python main.py
+          python3 main.py

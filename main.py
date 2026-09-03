@@ -508,6 +508,23 @@ def log_video_quality(video_file):
     except Exception as e:
         print(f"  (Could not probe quality: {e})")
 
+def toggle_or_refresh_warp():
+    """If Cloudflare WARP is active (e.g. GitHub Actions runner), toggle or reconnect to switch exit IPs."""
+    try:
+        res = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
+        if "Connected" in res.stdout:
+            print("WARP IP may be challenged by YouTube — disconnecting WARP to switch to runner direct IP...")
+            subprocess.run(["warp-cli", "disconnect"], capture_output=True, text=True, timeout=5)
+            time.sleep(3)
+        elif "Disconnected" in res.stdout:
+            print("Reconnecting WARP to switch to a fresh Cloudflare exit IP...")
+            subprocess.run(["warp-cli", "connect"], capture_output=True, text=True, timeout=5)
+            time.sleep(3)
+    except (FileNotFoundError, PermissionError):
+        pass  # warp-cli is not installed/runnable in this environment
+    except Exception as e:
+        print(f"WARP toggle attempt notice: {e}")
+
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
     temp_base = f"temp_video_{video_id}"
@@ -519,7 +536,7 @@ def download_and_backup(video_id, url, title):
         if cookie_size < 100:
             print("WARNING: cookies.txt is suspiciously small — may be empty or corrupt!")
     else:
-        print("WARNING: No cookies.txt found! Download will likely fail on datacenter IPs.")
+        print("WARNING: No cookies.txt found! Download will attempt unauthenticated guest clients.")
 
     # Base options shared by all strategies
     base_opts = {
@@ -542,33 +559,58 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-strategy fallback chain — uses web_embedded client which bypasses
-    # YouTube bot verification challenges on cloud runners while delivering full 1080p HD.
+    # Multi-tier download strategy chain:
+    # 1. Default cascade: yt-dlp intelligent client selection (authed: tv_downgraded/web; unauthed: visionos/android_vr/web)
+    # 2. visionos + android_vr: Apple Vision Pro & Meta Quest clients (1080p Full HD bot bypass, no PO-token needed)
+    # 3. tv_downgraded + tv: YouTube TV API (1080p Full HD, resilient with cookies or direct stream)
+    # 4. Guest session (visionos without cookies): bypasses invalid/expired/flagged cookie sessions
+    # 5. Mobile client fallback (mweb): adaptive fallback stream
+    # 6. Direct stream fallback (mweb + player_skip=webpage,configs): bypasses 429 webpage rate limits
     strategies = [
         {
-            "name": "web_embedded client (1080p Full HD + Deno challenge solver)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded"]}}},
+            "name": "default client cascade (tv_downgraded/visionos/web — 1080p Full HD)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
         },
         {
-            "name": "web_embedded + android client (1080p Full HD adaptive)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "android"]}}},
+            "name": "visionos + android_vr client (1080p Full HD bot bypass)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_vr"]}}},
         },
         {
-            "name": "web_embedded + web_safari client (1080p Full HD)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "web_safari"]}}},
+            "name": "tv_downgraded + tv client (1080p Full HD TV API)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_downgraded", "tv", "tv_simply"]}}},
         },
         {
-            "name": "android + web_embedded client (1080p Full HD fallback)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["android", "web_embedded"]}}},
+            "name": "guest session (visionos without cookies — bypasses flagged auth)",
+            "drop_cookiefile": True,
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_vr"]}}},
+        },
+        {
+            "name": "mweb mobile client (adaptive stream fallback)",
+            "drop_cookiefile": True,
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android_vr"]}}},
+        },
+        {
+            "name": "mweb direct player fallback (bypasses 429 webpage rate limit)",
+            "drop_cookiefile": True,
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb"], "player_skip": ["webpage", "configs"]}}},
         },
     ]
 
     total = len(strategies)
     last_error = None
     bot_detected = False
+    warp_toggled = False
 
     for attempt, strategy in enumerate(strategies):
         opts = {**base_opts, **strategy["overrides"]}
+        if strategy.get("drop_cookiefile"):
+            opts.pop("cookiefile", None)
+
+        # If previous attempts failed with bot detection or connection error, toggle WARP IP
+        if attempt == 2 and not warp_toggled:
+            toggle_or_refresh_warp()
+            warp_toggled = True
+
         print(f"Download attempt {attempt + 1}/{total}: {strategy['name']}...")
         try:
             with yt_dlp.YoutubeDL(opts) as ydl_dl:
@@ -585,12 +627,17 @@ def download_and_backup(video_id, url, title):
             if any(term in err_lower for term in ["cookiejar", "could not load cookie", "netscape format error", "malformed cookie", "cookie parsing error"]):
                 print("Corrupted/unparseable cookiefile detected — removing cookiefile for remaining attempts.")
                 base_opts.pop("cookiefile", None)
-            if "Sign in to confirm" in str(dl_err) or "not a bot" in str(dl_err):
+            if "sign in to confirm" in err_lower or "not a bot" in err_lower:
                 bot_detected = True
+                print("Bot detection challenge detected on this strategy.")
             # Clean up partial files before next attempt
             for partial in glob.glob(f"{temp_base}.part*"):
                 try: os.remove(partial)
                 except: pass
+            for partial in glob.glob(f"{temp_base}.ytdl"):
+                try: os.remove(partial)
+                except: pass
+            time.sleep(3)  # Anti-abuse backoff delay between attempts
 
     if last_error is not None:
         # All strategies failed — clean up and alert
