@@ -7,6 +7,7 @@ import glob
 import time
 import subprocess
 import json
+import copy
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -521,11 +522,89 @@ def check_pot_plugin_available():
     except (ImportError, ModuleNotFoundError):
         return False
 
+def check_pot_provider_server():
+    """Check if the local bgutil PO token provider HTTP server is running on port 4416."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://127.0.0.1:4416/ping", timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
 POT_AVAILABLE = check_pot_plugin_available()
-if POT_AVAILABLE:
-    print("PO Token plugin: DETECTED — bot detection bypass enabled.")
+POT_SERVER_ACTIVE = check_pot_provider_server()
+
+if POT_SERVER_ACTIVE:
+    print("PO Token Provider server: ACTIVE on http://127.0.0.1:4416 — Full HD bot bypass enabled.")
+elif POT_AVAILABLE:
+    print("PO Token plugin: DETECTED (Server pending or will be queried during download).")
 else:
-    print("WARNING: PO Token plugin NOT installed. Bot detection bypass unavailable.")
+    print("NOTE: PO Token plugin not pre-detected — running with standard and fallback engines.")
+
+def download_via_pytubefix(video_id, url, temp_base):
+    """Fallback download engine using pytubefix with built-in BotGuard PO token generator."""
+    print(f"Attempting fallback download via pytubefix (built-in BotGuard PO Token engine)...")
+    try:
+        import ssl
+        try:
+            import certifi
+            ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+
+        from pytubefix import YouTube
+        yt = YouTube(url, "WEB")
+
+        # Find best adaptive video and audio streams
+        video_stream = yt.streams.filter(adaptive=True, only_video=True).order_by("resolution").desc().first()
+        audio_stream = yt.streams.filter(adaptive=True, only_audio=True).order_by("abr").desc().first()
+
+        video_dest = f"{temp_base}.mp4"
+        if video_stream and audio_stream:
+            temp_v = f"{temp_base}_v.mp4"
+            temp_a = f"{temp_base}_a.mp4"
+            print(f"  pytubefix: Selected video stream {video_stream.resolution} ({video_stream.mime_type})")
+            print(f"  pytubefix: Selected audio stream {audio_stream.abr} ({audio_stream.mime_type})")
+            video_stream.download(filename=temp_v)
+            audio_stream.download(filename=temp_a)
+
+            # Merge audio and video via ffmpeg
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", temp_v,
+                "-i", temp_a,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                video_dest
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(temp_v):
+                try: os.remove(temp_v)
+                except: pass
+            if os.path.exists(temp_a):
+                try: os.remove(temp_a)
+                except: pass
+        else:
+            prog = yt.streams.filter(progressive=True).order_by("resolution").desc().first()
+            if prog:
+                print(f"  pytubefix: Selected progressive stream {prog.resolution}")
+                prog.download(filename=video_dest)
+            else:
+                return False
+
+        # Thumbnail fetch
+        try:
+            import urllib.request
+            thumb_url = getattr(yt, "thumbnail_url", None)
+            if thumb_url:
+                urllib.request.urlretrieve(thumb_url, f"{temp_base}.jpg")
+        except Exception as e:
+            print(f"  (pytubefix thumbnail fetch note: {e})")
+
+        return os.path.exists(video_dest)
+    except Exception as e:
+        print(f"pytubefix fallback failed: [{type(e).__name__}] {e}")
+        return False
 
 def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
@@ -556,30 +635,38 @@ def download_and_backup(video_id, url, title):
         ],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        }
+        },
+        "extractor_args": {
+            "youtubepot-bgutilhttp": {
+                "base_url": ["http://127.0.0.1:4416"]
+            }
+        },
     }
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-tier download strategy chain (PO-token-aware + quality-gated):
+    # Enable browser TLS impersonation via curl-cffi if installed
+    try:
+        import curl_cffi
+        base_opts["impersonate"] = "chrome"
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    # Multi-tier download strategy chain (PO-token-aware + quality-optimized):
     #
-    # IMPORTANT: The `web` client + PO token bypasses bot detection, but alone it may only
-    # serve low-quality (360p) formats on datacenter IPs. Combining `web` with `tv_downgraded`
-    # gives us BOTH: PO token auth via web AND 1080p DASH formats via the TV API.
-    #
-    # After each successful download, we check the video height via ffprobe. If it's below
-    # 720p (MIN_HEIGHT), we delete the file and try the next strategy for better quality.
-    #
-    # Strategy order:
-    # 1. web + tv_downgraded — PO token auth + 1080p TV DASH (best combo)
-    # 2. web + tv + tv_downgraded — add more TV clients for wider format pool
-    # 3. tv_downgraded + tv (no web) — pure TV API, sometimes gives better formats alone
-    # 4. web + mweb (guest, no cookies) — bypasses flagged auth, web provides PO token
-    # 5. visionos + android_vr — Apple/Meta device clients (native 1080p, no PO token)
-    # 6. default client cascade — let yt-dlp pick the best combination itself
-    MIN_HEIGHT = 720  # Minimum acceptable video height (720p)
+    # 1. web client with PO token provider: Connects to local bgutil-provider on port 4416
+    #    to generate genuine GVS + Player PO tokens for 1080p Full HD DASH streams.
+    # 2. web + tv_downgraded: PO token auth with access to TV DASH streams.
+    # 3. web + tv + tv_downgraded: Expanded format pool.
+    # 4. visionos + android_vr: Native Apple Vision Pro / Meta Quest clients (1080p without PO token).
+    # 5. default client cascade: yt-dlp auto-select.
+    MIN_HEIGHT = 720  # Target minimum resolution (720p/1080p preferred)
 
     strategies = [
+        {
+            "name": "web client with PO token (1080p Full HD DASH + GVS token)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web"]}}},
+        },
         {
             "name": "web + tv_downgraded (PO token + 1080p TV DASH)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "tv_downgraded"]}}},
@@ -587,10 +674,6 @@ def download_and_backup(video_id, url, title):
         {
             "name": "web + tv + tv_downgraded (PO token + full TV API)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "tv", "tv_downgraded"]}}},
-        },
-        {
-            "name": "tv_downgraded + tv (pure TV API — no PO token)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["tv_downgraded", "tv"]}}},
         },
         {
             "name": "guest web + mweb (PO token, no cookies — bypasses flagged auth)",
@@ -614,7 +697,16 @@ def download_and_backup(video_id, url, title):
     quality_ok = False
 
     for attempt, strategy in enumerate(strategies):
-        opts = {**base_opts, **strategy["overrides"]}
+        # Deep merge base_opts and overrides so extractor_args are never lost
+        opts = copy.deepcopy(base_opts)
+        for k, v in strategy.get("overrides", {}).items():
+            if k == "extractor_args" and "extractor_args" in opts:
+                opts["extractor_args"] = copy.deepcopy(opts["extractor_args"])
+                for sub_k, sub_v in v.items():
+                    opts["extractor_args"][sub_k] = copy.deepcopy(sub_v)
+            else:
+                opts[k] = v
+
         if strategy.get("drop_cookiefile"):
             opts.pop("cookiefile", None)
 
@@ -630,38 +722,35 @@ def download_and_backup(video_id, url, title):
                 ydl_dl.download([url])
             last_error = None
 
-            # QUALITY GATE: Check if the downloaded video meets minimum resolution
+            # QUALITY GATE: Check if the downloaded video meets preferred resolution
             video_file_check = f"{temp_base}.mp4"
             if os.path.exists(video_file_check):
-                print(f"Download succeeded — checking quality...")
+                print(f"Download succeeded — verifying quality...")
                 dl_height = log_video_quality(video_file_check)
                 if dl_height >= MIN_HEIGHT:
-                    print(f"✅ Quality OK ({dl_height}p ≥ {MIN_HEIGHT}p minimum)")
+                    print(f"✅ Quality OK ({dl_height}p ≥ {MIN_HEIGHT}p target)")
                     quality_ok = True
-                    break  # success with good quality
+                    break  # success with target quality
                 elif dl_height > 0 and attempt < total - 1:
-                    # Low quality but more strategies available — delete and retry
-                    print(f"⚠️ Quality too low ({dl_height}p < {MIN_HEIGHT}p) — deleting and trying next strategy for better quality...")
+                    # Lower resolution (e.g. 360p) on early attempt — try remaining strategies for 1080p/720p
+                    print(f"⚠️ Resolution is {dl_height}p (< {MIN_HEIGHT}p target) — trying next strategy for higher quality...")
                     os.remove(video_file_check)
-                    # Also clean up thumbnail
                     for f in glob.glob(f"{temp_base}.*"):
                         try: os.remove(f)
                         except: pass
-                    continue  # try next strategy
+                    continue
                 else:
-                    # Either couldn't determine height or last strategy — accept what we have
-                    print(f"Accepting download (height={'unknown' if dl_height == 0 else str(dl_height) + 'p'}, last available strategy)")
+                    # Final yt-dlp strategy — accept best available resolution rather than aborting
+                    print(f"Accepting download (height={'unknown' if dl_height == 0 else str(dl_height) + 'p'}) — best available quality.")
                     quality_ok = True
                     break
             else:
-                break  # download reported success but no file — handled later
+                break
 
         except Exception as dl_err:
             last_error = dl_err
             err_msg = f"[{type(dl_err).__name__}] {dl_err}"
             print(f"Download attempt {attempt + 1}/{total} failed: {err_msg}")
-            # Only remove cookiefile if there is an actual syntax / cookiejar file-reading error,
-            # NOT when yt-dlp prints its help text containing the word '--cookies'.
             err_lower = str(dl_err).lower()
             if any(term in err_lower for term in ["cookiejar", "could not load cookie", "netscape format error", "malformed cookie", "cookie parsing error"]):
                 print("Corrupted/unparseable cookiefile detected — removing cookiefile for remaining attempts.")
@@ -669,8 +758,6 @@ def download_and_backup(video_id, url, title):
             if "sign in to confirm" in err_lower or "not a bot" in err_lower:
                 bot_detected = True
                 print("Bot detection challenge detected on this strategy.")
-                if not POT_AVAILABLE:
-                    print("HINT: PO Token plugin is NOT installed — this is likely why bot detection can't be bypassed.")
             # Clean up partial files before next attempt
             for partial in glob.glob(f"{temp_base}.part*"):
                 try: os.remove(partial)
@@ -679,18 +766,28 @@ def download_and_backup(video_id, url, title):
                 try: os.remove(partial)
                 except: pass
 
-    if last_error is not None:
-        # All strategies failed — clean up and alert
+    # SECONDARY ENGINE: If all yt-dlp strategies failed or yielded no file, try pytubefix with BotGuard
+    video_file = f"{temp_base}.mp4"
+    if (last_error is not None or not os.path.exists(video_file)):
+        print("\nyt-dlp strategies exhausted — engaging secondary engine: pytubefix (autonomous BotGuard PO token)...")
+        pt_ok = download_via_pytubefix(video_id, url, temp_base)
+        if pt_ok and os.path.exists(video_file):
+            print("✅ Secondary engine (pytubefix) successfully downloaded video!")
+            log_video_quality(video_file)
+            last_error = None
+
+    if last_error is not None and not os.path.exists(video_file):
+        # All strategies and fallback engines failed — clean up and alert
         for partial in glob.glob(f"{temp_base}.*"):
             try: os.remove(partial)
             except: pass
-        print(f"Failed to backup video after {total} attempts: [{type(last_error).__name__}] {last_error}")
+        print(f"Failed to backup video after all strategies and engines: [{type(last_error).__name__}] {last_error}")
 
         # Send Telegram alert if bot detection was the cause
         if bot_detected:
             send_cookie_alert(
-                f"All {total} download strategies failed for video {video_id} "
-                f"with bot detection. Cookies are likely expired — please re-export!"
+                f"All download strategies failed for video {video_id} with bot detection. "
+                f"YouTube requires refreshed session or updated PO token provider."
             )
         return None
 

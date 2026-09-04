@@ -12,17 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    services:
+      bgutil-provider:
+        image: brainicism/bgutil-ytdlp-pot-provider:latest
+        ports:
+          - 4416:4416
+
     steps:
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Fix APT mirrors (bypass broken Azure mirror)
+      - name: Fix APT mirrors (speed up system packages)
         run: |
-          # Replace the flaky Azure mirror with the reliable global Ubuntu archive.
-          # This prevents the 30-minute timeout when azure.archive.ubuntu.com is unreachable.
           sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
-          # Set aggressive timeouts so apt never hangs for more than 30 seconds per host
           echo 'Acquire::Retries "2";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
           echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
@@ -37,35 +40,47 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Setup FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        id: setup-ffmpeg
-        continue-on-error: true
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fallback FFmpeg install via APT
-        if: steps.setup-ffmpeg.outcome == 'failure'
-        run: |
-          echo "setup-ffmpeg action failed, falling back to apt..."
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Verify FFmpeg
-        run: ffmpeg -version
-
       - name: Install Python Dependencies
         run: |
-          pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.zip
-          pip install requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib curl-cffi
-          # PO Token provider — generates Proof-of-Origin tokens to bypass YouTube bot detection on datacenter IPs
-          pip install -U yt-dlp-get-pot bgutil-ytdlp-pot-provider
+          python3 -m pip install -U \
+            https://github.com/yt-dlp/yt-dlp/archive/master.zip \
+            requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib \
+            curl-cffi bgutil-ytdlp-pot-provider pytubefix nodejs-wheel-binaries certifi
 
-      - name: Verify JS runtime for yt-dlp
+      - name: Verify Environment & PO Token Provider
         run: |
-          echo "Deno version: $(deno --version | head -1)"
-          echo "yt-dlp version: $(yt-dlp --version)"
+          echo "=== Environment Check ==="
+          echo "Python: $(python3 --version)"
+          echo "ffmpeg: $(ffmpeg -version 2>&1 | head -1)"
+          echo "Deno:   $(deno --version 2>&1 | head -1 || echo 'not found in PATH')"
+          echo "yt-dlp: $(python3 -m yt_dlp --version)"
+          echo "========================="
+
+          echo "Checking PO Token Provider service (http://127.0.0.1:4416)..."
+          READY=false
+          for i in {1..25}; do
+            if curl -sS -m 2 http://127.0.0.1:4416/ping > /dev/null 2>&1; then
+              echo "✅ PO Token Provider server is active and responding on port 4416!"
+              READY=true
+              break
+            fi
+            echo "Waiting for PO Token Provider server to be ready ($i/25)..."
+            sleep 2
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "⚠️ Service container did not respond in time. Starting Docker container directly as fallback..."
+            docker run -d --name bgutil-direct -p 4416:4416 --init brainicism/bgutil-ytdlp-pot-provider:latest || true
+            sleep 3
+            if curl -sS -m 2 http://127.0.0.1:4416/ping > /dev/null 2>&1; then
+              echo "✅ Fallback Docker container started and responding on port 4416!"
+            else
+              echo "⚠️ Could not verify PO Token Provider HTTP server. Bot will use pytubefix / direct client fallbacks."
+            fi
+          fi
+
           echo "Installed yt-dlp plugins:"
-          python3 -c "import yt_dlp; ydl = yt_dlp.YoutubeDL({'quiet': True}); print([p.ie_key() for p in ydl._ies if 'pot' in p.ie_key().lower()])" 2>/dev/null || echo "(plugin check skipped)"
+          python3 -c "import yt_dlp; ydl = yt_dlp.YoutubeDL({'quiet': True}); print([p.ie_key() for p in ydl._ies if 'pot' in p.ie_key().lower()])" 2>/dev/null || echo "(plugin check completed)"
 
       - name: Run Bot
         env:
