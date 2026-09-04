@@ -57,21 +57,15 @@ jobs:
         run: |
           pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.zip
           pip install requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib curl-cffi
+          # PO Token provider — generates Proof-of-Origin tokens to bypass YouTube bot detection on datacenter IPs
+          pip install -U yt-dlp-get-pot bgutil-ytdlp-pot-provider
 
       - name: Verify JS runtime for yt-dlp
         run: |
           echo "Deno version: $(deno --version | head -1)"
           echo "yt-dlp version: $(yt-dlp --version)"
-
-      - name: Setup Cloudflare WARP
-        run: |
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ focal main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update && sudo apt-get install -y cloudflare-warp
-          warp-cli --accept-tos registration new
-          warp-cli --accept-tos connect
-          sleep 5
-          curl -sS https://cloudflare.com/cdn-cgi/trace | grep warp
+          echo "Installed yt-dlp plugins:"
+          python3 -c "import yt_dlp; ydl = yt_dlp.YoutubeDL({'quiet': True}); print([p.ie_key() for p in ydl._ies if 'pot' in p.ie_key().lower()])" 2>/dev/null || echo "(plugin check skipped)"
 
       - name: Run Bot
         env:
