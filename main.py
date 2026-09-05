@@ -636,9 +636,9 @@ def download_and_backup(video_id, url, title):
 
     # Base options shared by all strategies
     base_opts = {
-        # Prioritize original/Hindi audio over AI auto-dubbed tracks (e.g. auto-generated English)
-        "format": "bestvideo+bestaudio[format_note*=original]/bestvideo+bestaudio[language=orig]/bestvideo+bestaudio[language=hi]/bestvideo+bestaudio[language_preference>=0]/bestvideo+bestaudio/best",
-        "format_sort": ["res", "vbr", "lang", "abr"],    # Sort by: resolution -> video bitrate -> original language -> audio bitrate
+        # Prioritize 1080p Full HD video + original/Hindi audio over AI auto-dubbed tracks
+        "format": "bestvideo[height<=1080]+bestaudio[format_note*=original]/bestvideo[height<=1080]+bestaudio[language=orig]/bestvideo[height<=1080]+bestaudio[language=hi]/bestvideo[height<=1080]+bestaudio[language_preference>=0]/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
+        "format_sort": ["res:1080", "vbr", "lang", "abr"],    # Sort by: 1080p resolution -> video bitrate -> original language -> audio bitrate
         "merge_output_format": "mp4",            # FFmpeg merges everything into mp4
         "outtmpl": f"{temp_base}.%(ext)s",
         "quiet": False,
@@ -660,42 +660,36 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-tier download strategy chain (PO-token-aware + quality-optimized):
+    # Multi-tier download strategy chain (Optimized: High-Quality Full HD DASH Cascade First):
     #
-    # 1. web client with PO token provider: Connects to local bgutil-provider on port 4416
-    #    to generate genuine GVS + Player PO tokens for 1080p Full HD DASH streams.
-    # 2. web + tv_downgraded: PO token auth with access to TV DASH streams.
-    # 3. web + tv + tv_downgraded: Expanded format pool.
-    # 4. visionos + android_vr: Native Apple Vision Pro / Meta Quest clients (1080p without PO token).
-    # 5. default client cascade: yt-dlp auto-select.
+    # 1. default client cascade: yt-dlp auto-select (web_creator + tv_downgraded + android + ios + web with cookies).
+    #    Directly acquires 1080p Full HD video (f137/f248) + original high-bitrate audio (f140) on Attempt 1.
+    # 2. web_creator + tv_downgraded + web: PO token auth with Creator Studio & TV DASH access.
+    # 3. android + ios + tv_downgraded: Mobile and TV app clients with unthrottled streams.
+    # 4. web + tv + tv_downgraded: PO token web fallback.
+    # 5. visionos + android_vr: Native Apple Vision Pro / Meta Quest client fallback.
     MIN_HEIGHT = 720  # Target minimum resolution (720p/1080p preferred)
 
     strategies = [
         {
-            "name": "web client with PO token (1080p Full HD DASH + GVS token)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web"]}}},
+            "name": "default client cascade (yt-dlp auto-select — 1080p Full HD DASH + max audio)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
         },
         {
-            "name": "web + tv_downgraded (PO token + 1080p TV DASH)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "tv_downgraded"]}}},
+            "name": "web_creator + tv_downgraded + web (PO token + Creator/TV DASH)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "tv_downgraded", "web"]}}},
+        },
+        {
+            "name": "android + ios + tv_downgraded (mobile/tv device clients)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["android", "ios", "tv_downgraded"]}}},
         },
         {
             "name": "web + tv + tv_downgraded (PO token + full TV API)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "tv", "tv_downgraded"]}}},
         },
         {
-            "name": "guest web + mweb (PO token, no cookies — bypasses flagged auth)",
-            "drop_cookiefile": True,
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "mweb"]}}},
-        },
-        {
-            "name": "visionos + android_vr (device client — native 1080p)",
-            "drop_cookiefile": True,
+            "name": "visionos + android_vr (device client fallback)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_vr"]}}},
-        },
-        {
-            "name": "default client cascade (yt-dlp auto-select)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
         },
     ]
 
