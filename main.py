@@ -199,14 +199,29 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
         if thumbnail_path and uploaded_video_id:
             print(f"Uploading thumbnail {thumbnail_path}...")
             try:
-                # Convert webp to jpg if needed (YouTube API doesn't accept webp)
+                # Convert webp to jpg if needed (YouTube API requires JPEG or PNG)
                 if thumbnail_path.endswith(".webp"):
                     jpg_path = thumbnail_path.replace(".webp", ".jpg")
-                    subprocess.run(
-                        ["ffmpeg", "-y", "-i", thumbnail_path, "-q:v", "1", jpg_path],
-                        check=True, capture_output=True
-                    )
-                    thumbnail_path = jpg_path
+                    converted = False
+                    try:
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", thumbnail_path, "-q:v", "1", jpg_path],
+                            check=True, capture_output=True
+                        )
+                        converted = os.path.exists(jpg_path)
+                    except Exception:
+                        pass
+                    if not converted:
+                        try:
+                            from PIL import Image
+                            im = Image.open(thumbnail_path).convert("RGB")
+                            im.save(jpg_path, "JPEG", quality=95)
+                            converted = True
+                        except Exception as pil_err:
+                            print(f"  (Pillow conversion fallback note: {pil_err})")
+                    if converted and os.path.exists(jpg_path):
+                        thumbnail_path = jpg_path
+
                 youtube.thumbnails().set(
                     videoId=uploaded_video_id,
                     media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")

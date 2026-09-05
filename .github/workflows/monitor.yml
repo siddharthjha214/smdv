@@ -23,12 +23,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Fix APT mirrors (speed up system packages)
+      - name: Install System Dependencies (FFmpeg)
         run: |
           sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
-          echo 'Acquire::Retries "2";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
-          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
-          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
+          echo 'Acquire::http::Timeout "20";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          echo "FFmpeg installed successfully: $(ffmpeg -version | head -n 1)"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -45,7 +47,7 @@ jobs:
           python3 -m pip install -U \
             https://github.com/yt-dlp/yt-dlp/archive/master.zip \
             requests pytz google-api-python-client google-auth-httplib2 google-auth-oauthlib \
-            curl-cffi bgutil-ytdlp-pot-provider pytubefix nodejs-wheel-binaries certifi
+            curl-cffi bgutil-ytdlp-pot-provider pytubefix nodejs-wheel-binaries certifi pillow
 
       - name: Verify Environment & PO Token Provider
         run: |
@@ -75,7 +77,7 @@ jobs:
             if curl -sS -m 2 http://127.0.0.1:4416/ping > /dev/null 2>&1; then
               echo "✅ Fallback Docker container started and responding on port 4416!"
             else
-              echo "⚠️ Could not verify PO Token Provider HTTP server. Bot will use pytubefix / direct client fallbacks."
+              echo "⚠️ Could not verify PO Token Provider HTTP server."
             fi
           fi
 
