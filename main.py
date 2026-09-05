@@ -645,13 +645,6 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Enable browser TLS impersonation via curl-cffi if installed
-    try:
-        import curl_cffi
-        base_opts["impersonate"] = "chrome"
-    except (ImportError, ModuleNotFoundError):
-        pass
-
     # Multi-tier download strategy chain (PO-token-aware + quality-optimized):
     #
     # 1. web client with PO token provider: Connects to local bgutil-provider on port 4416
@@ -749,8 +742,11 @@ def download_and_backup(video_id, url, title):
 
         except Exception as dl_err:
             last_error = dl_err
-            err_msg = f"[{type(dl_err).__name__}] {dl_err}"
+            err_msg = f"[{type(dl_err).__name__}] {dl_err}".strip()
             print(f"Download attempt {attempt + 1}/{total} failed: {err_msg}")
+            if not str(dl_err).strip():
+                import traceback
+                traceback.print_exc()
             err_lower = str(dl_err).lower()
             if any(term in err_lower for term in ["cookiejar", "could not load cookie", "netscape format error", "malformed cookie", "cookie parsing error"]):
                 print("Corrupted/unparseable cookiefile detected — removing cookiefile for remaining attempts.")
