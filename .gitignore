@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 cookies.txt
+*cookies*.txt
 secrets.sh
 temp_video_*
 *.mp4
