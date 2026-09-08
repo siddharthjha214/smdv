@@ -32,6 +32,22 @@ jobs:
           sudo apt-get install -y ffmpeg
           echo "FFmpeg installed successfully: $(ffmpeg -version | head -n 1)"
 
+      - name: Setup Cloudflare WARP (Residential IP Cloaking)
+        run: |
+          echo "Installing Cloudflare WARP for residential IP routing..."
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update -y
+          sudo apt-get install -y cloudflare-warp
+          warp-cli --accept-tos registration new || true
+          warp-cli --accept-tos mode warp || true
+          warp-cli --accept-tos connect || true
+          sleep 3
+          echo "WARP Status:"
+          warp-cli --accept-tos status || true
+          echo "Outbound IP check:"
+          curl -sS https://cloudflare.com/cdn-cgi/trace | grep -E "ip=|loc=|warp=" || curl -sS https://ifconfig.me || echo "(IP check done)"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -118,8 +134,8 @@ jobs:
               
               size = len(content.encode("utf-8"))
               lines = len(content.splitlines())
-              print(f"cookies.txt created: {size} bytes, {lines} lines")
+              print(f"Optional cookies.txt loaded: {size} bytes, {lines} lines")
           else:
-              print("WARNING: YOUTUBE_COOKIES secret is not set — downloads will fail!")
+              print("No YOUTUBE_COOKIES secret found — operating in 100% Cookieless PO-Token + WARP Autopilot Mode!")
           '
           python3 main.py

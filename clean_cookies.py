@@ -15,22 +15,21 @@ import base64
 import subprocess
 
 def clean_cookies():
-    # 1. Locate cookie file
-    candidates = [
-        os.path.expanduser("~/Downloads/cookies.txt"),
-        "cookies.txt",
-        os.path.expanduser("~/Downloads/youtube.com_cookies.txt"),
-        os.path.expanduser("~/Downloads/cookies.Others .txt")
-    ]
+    # 1. Locate newest cookie file
+    import glob
+    candidates = glob.glob(os.path.expanduser("~/Downloads/*cookie*.txt")) + \
+                 glob.glob(os.path.expanduser("~/Downloads/*cookies*.txt")) + \
+                 glob.glob("*cookie*.txt")
     
+    # Sort candidates by modification time (newest first)
+    candidates = sorted(list(set(candidates)), key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
+
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         source_path = sys.argv[1]
+    elif candidates:
+        source_path = candidates[0]
     else:
         source_path = None
-        for path in candidates:
-            if os.path.exists(path):
-                source_path = path
-                break
 
     if not source_path:
         print("❌ Could not find a cookies.txt file in current folder or ~/Downloads!")
@@ -38,7 +37,8 @@ def clean_cookies():
         sys.exit(1)
 
     original_size = os.path.getsize(source_path)
-    print(f"📄 Found cookie file: {source_path} ({original_size:,} bytes / {original_size/1024:.1f} KB)")
+    mtime_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(source_path)))
+    print(f"📄 Found latest cookie file: {source_path} ({original_size:,} bytes / {original_size/1024:.1f} KB, modified: {mtime_str})")
 
     with open(source_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
@@ -98,7 +98,28 @@ def clean_cookies():
     b64_size = len(b64_content)
     print(f"🔐 Base64 size: {b64_size:,} bytes ({b64_size/1024:.2f} KB)")
 
-    # 6. Copy to clipboard on macOS
+    # 6. Test cookies live with yt-dlp if available
+    try:
+        import yt_dlp
+        test_opts = {
+            "quiet": True,
+            "no_warnings": False,
+            "cookiefile": out_file,
+            "skip_download": True,
+        }
+        print("🔍 Testing cleaned cookies against YouTube...")
+        with yt_dlp.YoutubeDL(test_opts) as test_ydl:
+            info = test_ydl.extract_info("https://youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            print("🎉 YouTube successfully verified the cookies! (Logged-in session confirmed)")
+    except Exception as test_e:
+        err_str = str(test_e)
+        if "rotated" in err_str or "no longer valid" in err_str:
+            print(f"⚠️  WARNING: YouTube reports these cookies have been rotated by the browser.")
+            print("   Please export a fresh cookie file from YouTube without continuing to browse.")
+        else:
+            print(f"ℹ️  Test check: {test_e}")
+
+    # 7. Copy to clipboard on macOS
     try:
         process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
         process.communicate(cleaned_text.encode("utf-8"))

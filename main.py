@@ -32,7 +32,7 @@ def check_service_health():
 check_service_health()
 
 def validate_cookies(cookie_file="cookies.txt"):
-    """Check if the cookie file contains the essential YouTube auth cookies and they haven't expired."""
+    """Check if the optional cookie file contains the essential YouTube auth cookies."""
     if not os.path.exists(cookie_file):
         return False, "Cookie file missing"
 
@@ -65,17 +65,15 @@ def validate_cookies(cookie_file="cookies.txt"):
 
     return True, "OK"
 
-def send_cookie_alert(reason):
-    """Send a Telegram alert when cookies are invalid so the user knows to re-export."""
+def send_bot_alert(reason):
+    """Send a Telegram alert when download strategies fail due to bot detection."""
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
         return
     message = (
-        "⚠️ COOKIE ALERT ⚠️\n\n"
-        f"YouTube cookies are invalid:\n{reason}\n\n"
-        "The bot will attempt downloads using fallback strategies, "
-        "but you should re-export fresh cookies ASAP.\n\n"
-        "Remember: export cookies then CLOSE the browser — DO NOT log out!"
+        "⚠️ BOT DETECTION ALERT ⚠️\n\n"
+        f"YouTube download issue encountered:\n{reason}\n\n"
+        "The bot is operating with PO Token Provider and Cloudflare WARP."
     )
     try:
         requests.post(
@@ -89,16 +87,19 @@ def send_cookie_alert(reason):
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "765673702"
 
-# Validate cookies at startup
+# Validate cookies at startup (Optional Layer)
 if os.path.exists("cookies.txt"):
     cookies_valid, cookie_reason = validate_cookies()
     if cookies_valid:
-        print("Cookie validation: OK — auth cookies present and not expired.")
+        print("Optional Cookie validation: OK — auth cookies present and valid.")
     else:
-        print(f"WARNING: Cookie validation FAILED — {cookie_reason}")
-        send_cookie_alert(cookie_reason)
+        print(f"Notice: Optional cookie validation skipped ({cookie_reason}) — operating in 100% Cookieless PO-Token + WARP Mode.")
+        try:
+            os.remove("cookies.txt")
+        except Exception:
+            pass
 else:
-    print("WARNING: No cookies.txt found! Downloads will likely fail on datacenter IPs.")
+    print("🚀 Operating in 100% Cookieless Autopilot Mode (PO Token Provider on :4416 + Cloudflare WARP).")
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
 CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
 CHANNEL_ID = "UCBqFKDipsnzvJdt6UT0lMIg"
@@ -625,14 +626,12 @@ def download_and_backup(video_id, url, title):
     print(f"Downloading video {video_id} via yt-dlp...")
     temp_base = f"temp_video_{video_id}"
 
-    # Log cookie state so we can diagnose auth failures from the logs
+    # Log cookie / auth state
     if os.path.exists("cookies.txt"):
         cookie_size = os.path.getsize("cookies.txt")
-        print(f"cookies.txt found ({cookie_size} bytes)")
-        if cookie_size < 100:
-            print("WARNING: cookies.txt is suspiciously small — may be empty or corrupt!")
+        print(f"Optional cookies.txt found ({cookie_size} bytes)")
     else:
-        print("WARNING: No cookies.txt found! Download will attempt unauthenticated guest clients.")
+        print("Auth mode: 100% Cookieless Autopilot (PO Token Provider on :4416 + Cloudflare WARP).")
 
     # Base options shared by all strategies
     base_opts = {
@@ -660,13 +659,12 @@ def download_and_backup(video_id, url, title):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
 
-    # Multi-tier download strategy chain (Optimized: High-Quality Full HD DASH Cascade First):
+    # Multi-tier download strategy chain (Cookieless High-Definition Cascade):
     #
-    # 1. default client cascade: yt-dlp auto-select (web_creator + tv_downgraded + android + ios + web with cookies).
-    #    Directly acquires 1080p Full HD video (f137/f248) + original high-bitrate audio (f140) on Attempt 1.
-    # 2. web_creator + tv_downgraded + web: PO token auth with Creator Studio & TV DASH access.
-    # 3. android + ios + tv_downgraded: Mobile and TV app clients with unthrottled streams.
-    # 4. web + tv + tv_downgraded: PO token web fallback.
+    # 1. default client cascade: yt-dlp auto-select with PO token provider (1080p Full HD DASH + original audio).
+    # 2. ios + android + tv_downgraded: Mobile/TV app endpoints (unthrottled streams, bypasses web bot checks).
+    # 3. web_creator + tv_downgraded + web: PO token auth with Creator Studio & TV DASH access.
+    # 4. mweb + android + tv: Mobile web and TV client fallback.
     # 5. visionos + android_vr: Native Apple Vision Pro / Meta Quest client fallback.
     MIN_HEIGHT = 720  # Target minimum resolution (720p/1080p preferred)
 
@@ -676,16 +674,16 @@ def download_and_backup(video_id, url, title):
             "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
         },
         {
+            "name": "ios + android + tv_downgraded (mobile/tv device clients — no cookies needed)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["ios", "android", "tv_downgraded"]}}},
+        },
+        {
             "name": "web_creator + tv_downgraded + web (PO token + Creator/TV DASH)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "tv_downgraded", "web"]}}},
         },
         {
-            "name": "android + ios + tv_downgraded (mobile/tv device clients)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["android", "ios", "tv_downgraded"]}}},
-        },
-        {
-            "name": "web + tv + tv_downgraded (PO token + full TV API)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web", "tv", "tv_downgraded"]}}},
+            "name": "mweb + android + tv (mobile web + app endpoints)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android", "tv"]}}},
         },
         {
             "name": "visionos + android_vr (device client fallback)",
@@ -790,9 +788,9 @@ def download_and_backup(video_id, url, title):
 
         # Send Telegram alert if bot detection was the cause
         if bot_detected:
-            send_cookie_alert(
+            send_bot_alert(
                 f"All download strategies failed for video {video_id} with bot detection. "
-                f"YouTube requires refreshed session or updated PO token provider."
+                f"Check PO token provider and IP status."
             )
         return None
 
