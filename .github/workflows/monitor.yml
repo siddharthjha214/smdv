@@ -25,27 +25,31 @@ jobs:
 
       - name: Install System Dependencies (FFmpeg)
         run: |
-          # Remove problematic third-party repositories pre-installed on GitHub Actions runners
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/chrome-stable.list
+          # 1. Purge all Google/Chrome repository configurations (both .list and .sources deb822 formats)
+          sudo rm -f /etc/apt/sources.list.d/*chrome* /etc/apt/sources.list.d/*google*
+          sudo find /etc/apt/sources.list.d/ -type f \( -name "*chrome*" -o -name "*google*" \) -delete 2>/dev/null || true
 
-          # Fix Ubuntu archive mirrors and configure timeouts/retries
-          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+          # 2. Configure mirror fallbacks and network timeouts
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
           echo 'Acquire::http::Timeout "20";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
           echo 'Acquire::http::Pipeline-Depth "0";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
 
-          # Clean stale list caches and update
+          # 3. Clean stale list caches and update Ubuntu repositories
           sudo rm -rf /var/lib/apt/lists/*
-          sudo apt-get update -y
-          sudo apt-get install -y ffmpeg
-          echo "FFmpeg installed successfully: $(ffmpeg -version | head -n 1)"
+          sudo apt-get update -y || true
+          if ! command -v ffmpeg &> /dev/null; then
+            sudo apt-get install -y ffmpeg
+          fi
+          echo "FFmpeg ready: $(ffmpeg -version | head -n 1)"
 
       - name: Setup Cloudflare WARP (Residential IP Cloaking)
         run: |
           echo "Installing Cloudflare WARP for residential IP routing..."
+          sudo rm -f /etc/apt/sources.list.d/*chrome* /etc/apt/sources.list.d/*google* 2>/dev/null || true
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update -y
+          sudo apt-get update -y || true
           sudo apt-get install -y cloudflare-warp
           warp-cli --accept-tos registration new || true
           warp-cli --accept-tos mode warp || true
