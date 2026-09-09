@@ -25,9 +25,17 @@ jobs:
 
       - name: Install System Dependencies (FFmpeg)
         run: |
+          # Remove problematic third-party repositories pre-installed on GitHub Actions runners
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/chrome-stable.list
+
+          # Fix Ubuntu archive mirrors and configure timeouts/retries
           sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-custom-timeouts
           echo 'Acquire::http::Timeout "20";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
+          echo 'Acquire::http::Pipeline-Depth "0";' | sudo tee -a /etc/apt/apt.conf.d/80-custom-timeouts
+
+          # Clean stale list caches and update
+          sudo rm -rf /var/lib/apt/lists/*
           sudo apt-get update -y
           sudo apt-get install -y ffmpeg
           echo "FFmpeg installed successfully: $(ffmpeg -version | head -n 1)"

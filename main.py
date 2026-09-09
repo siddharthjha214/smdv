@@ -223,13 +223,31 @@ def upload_video_to_youtube(file_path, title, thumbnail_path=None):
                     if converted and os.path.exists(jpg_path):
                         thumbnail_path = jpg_path
 
-                youtube.thumbnails().set(
-                    videoId=uploaded_video_id,
-                    media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
-                ).execute()
-                print("Thumbnail uploaded successfully!")
+                # Attempt thumbnail upload with a single retry
+                thumb_uploaded = False
+                for thumb_attempt in range(2):
+                    try:
+                        youtube.thumbnails().set(
+                            videoId=uploaded_video_id,
+                            media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
+                        ).execute()
+                        print("✅ Thumbnail uploaded successfully!")
+                        thumb_uploaded = True
+                        break
+                    except Exception as t_err:
+                        err_str = str(t_err)
+                        if "uploadRateLimitExceeded" in err_str or "too many thumbnails" in err_str.lower():
+                            print("⚠️  YouTube channel daily custom thumbnail limit reached (24-hour rate limit).")
+                            print("   The video was successfully uploaded with the default frame thumbnail.")
+                            break
+                        elif thumb_attempt == 0:
+                            print(f"  (Thumbnail upload attempt 1 failed: {t_err} — retrying in 3s...)")
+                            time.sleep(3)
+                        else:
+                            print(f"⚠️  Failed to upload thumbnail: {t_err}")
+
             except Exception as thumb_err:
-                print(f"Failed to upload thumbnail: {thumb_err}")
+                print(f"⚠️  Thumbnail processing skipped: {thumb_err}")
 
                 
                 
