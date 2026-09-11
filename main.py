@@ -684,20 +684,23 @@ def download_and_backup(video_id, url, title):
 
     strategies = [
         {
-            "name": "web_embedded + visionos (1080p Cookieless Autopilot via WARP)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "visionos"]}}},
+            "name": "visionos + android_creator + web_embedded (1080p Pure Cookieless Autopilot)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_creator", "web_embedded"]}}},
+            "drop_cookiefile": True,
         },
         {
-            "name": "visionos + android_vr (High-res Unthrottled Device Stream)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_vr"]}}},
+            "name": "android_music + ios_music + android_vr (High-res Media Device Streams)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["android_music", "ios_music", "android_vr"]}}},
+            "drop_cookiefile": True,
         },
         {
-            "name": "web_creator + web_embedded + tv (PO Token Provider on :4416 + TV DASH)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "web_embedded", "tv"]}}},
+            "name": "web_embedded + android_vr (Universal Embedded Stream Cascade)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "android_vr"]}}},
+            "drop_cookiefile": True,
         },
         {
-            "name": "mweb + android_vr (Mobile & VR Stream Fallback)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android_vr"]}}},
+            "name": "web_creator + mweb + android_vr (PO Token Provider on :4416 Fallback)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "mweb", "android_vr"]}}},
         },
         {
             "name": "default client cascade (yt-dlp auto-select with PO token)",
@@ -769,9 +772,12 @@ def download_and_backup(video_id, url, title):
                 import traceback
                 traceback.print_exc()
             err_lower = str(dl_err).lower()
-            if any(term in err_lower for term in ["cookiejar", "could not load cookie", "netscape format error", "malformed cookie", "cookie parsing error"]):
-                print("Corrupted/unparseable cookiefile detected — removing cookiefile for remaining attempts.")
+            if any(term in err_lower for term in ["cookiejar", "could not load cookie", "netscape format error", "malformed cookie", "cookie parsing error", "sign in to confirm", "not a bot", "please sign in"]):
+                print("Cookie session issue or bot challenge detected — purging cookiefile for all remaining attempts.")
                 base_opts.pop("cookiefile", None)
+                if os.path.exists("cookies.txt"):
+                    try: os.remove("cookies.txt")
+                    except: pass
             if "sign in to confirm" in err_lower or "not a bot" in err_lower:
                 bot_detected = True
                 print("Bot detection challenge detected on this strategy.")
