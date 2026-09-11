@@ -16,6 +16,8 @@ from googleapiclient.http import MediaFileUpload
 # SETTINGS
 # ==========================================
 
+
+
 def check_service_health():
     print("Checking GitHub system status...")
     try:
@@ -355,35 +357,23 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
     # Find which backup videos were deleted by YouTube and re-upload them
     for source_vid, backup_vid in to_check.items():
         if backup_vid not in existing_backup_ids:
-            current_attempts = db_active_videos[source_vid].get("reupload_attempts", 0)
-            new_attempts = current_attempts + 1
+            print(f"Backup video {backup_vid} was DELETED by YouTube — scheduling immediate re-upload.")
 
-            print(f"Backup video {backup_vid} was DELETED by YouTube (attempt {new_attempts}/3).")
-
-            # Reset in Google Sheets first (sheet will mark as YouTube Removed if attempts >= 3)
+            # Reset in Google Sheets first
             try:
                 requests.post(
                     GOOGLE_SCRIPT_URL,
-                    json={"type": "reset_backup", "video_id": source_vid},
+                    json={"type": "force_pending", "video_id": source_vid},
                     timeout=15
                 )
             except Exception as e:
                 print(f"ERROR resetting sheet for {source_vid}: {e}")
 
             # Update local cache
-            db_active_videos[source_vid]["reupload_attempts"] = new_attempts
             db_active_videos[source_vid]["backup_video_id"] = ""
             db_active_videos[source_vid]["backup_date"] = ""
-            backed_up_this_run.discard(source_vid)
-
-            if new_attempts >= 3:
-                # YouTube keeps removing it (copyright enforcement) — stop trying
-                print(f"PERMANENTLY SKIPPING {source_vid} — YouTube has removed it {new_attempts} times. Marked as 'YouTube Removed'.")
-                db_active_videos[source_vid]["backup_status"] = "YouTube Removed"
-                continue  # Do NOT re-upload
-
-            # Reset local status to Pending and re-upload if quota allows
             db_active_videos[source_vid]["backup_status"] = "Pending"
+            backed_up_this_run.discard(source_vid)
 
             if quota_used < DAILY_UPLOAD_QUOTA:
                 vid_data = db_active_videos.get(source_vid, {})
@@ -587,7 +577,7 @@ def download_via_pytubefix(video_id, url, temp_base):
             pass
 
         from pytubefix import YouTube
-        yt = YouTube(url, "WEB")
+        yt = YouTube(url, "TV")
 
         # Find best adaptive video and audio streams
         video_stream = yt.streams.filter(adaptive=True, only_video=True).order_by("resolution").desc().first()
@@ -661,6 +651,12 @@ def download_and_backup(video_id, url, title):
         "quiet": False,
         "no_warnings": True,                    # Clean terminal output: silence cosmetic cookie rotation warnings
         "writethumbnail": True,
+        "concurrent_fragment_downloads": 8,      # Multi-threaded HLS/DASH parallel downloads (prevents stalls & 30m timeouts)
+        "buffersize": 1024 * 1024,               # 1 MB socket buffer
+        "http_chunk_size": 10485760,             # 10 MB chunk size
+        "retries": 10,
+        "fragment_retries": 10,
+        "skip_unavailable_fragments": True,
         "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
         "postprocessors": [
             {"key": "FFmpegThumbnailsConvertor", "format": "jpg"},  # Auto-convert thumbnails to max quality jpg
@@ -688,24 +684,24 @@ def download_and_backup(video_id, url, title):
 
     strategies = [
         {
-            "name": "default client cascade (yt-dlp auto-select — 1080p Full HD DASH + max audio)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
+            "name": "web_embedded + visionos (1080p Cookieless Autopilot via WARP)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_embedded", "visionos"]}}},
         },
         {
-            "name": "ios + android + tv_downgraded (mobile/tv device clients — no cookies needed)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["ios", "android", "tv_downgraded"]}}},
-        },
-        {
-            "name": "web_creator + tv_downgraded + web (PO token + Creator/TV DASH)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "tv_downgraded", "web"]}}},
-        },
-        {
-            "name": "mweb + android + tv (mobile web + app endpoints)",
-            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android", "tv"]}}},
-        },
-        {
-            "name": "visionos + android_vr (device client fallback)",
+            "name": "visionos + android_vr (High-res Unthrottled Device Stream)",
             "overrides": {"extractor_args": {"youtube": {"player_client": ["visionos", "android_vr"]}}},
+        },
+        {
+            "name": "web_creator + web_embedded + tv (PO Token Provider on :4416 + TV DASH)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["web_creator", "web_embedded", "tv"]}}},
+        },
+        {
+            "name": "mweb + android_vr (Mobile & VR Stream Fallback)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["mweb", "android_vr"]}}},
+        },
+        {
+            "name": "default client cascade (yt-dlp auto-select with PO token)",
+            "overrides": {"extractor_args": {"youtube": {"player_client": ["default"]}}},
         },
     ]
 
