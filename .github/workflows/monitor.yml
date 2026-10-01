@@ -30,27 +30,41 @@ jobs:
 
       - name: Setup Cloudflare WARP (Residential IP Cloaking)
         run: |
-          echo "Installing Cloudflare WARP for residential IP routing..."
-          # Clean up any problematic repository configs and remove broken timeout overrides
+          echo "Installing Cloudflare WARP headless daemon..."
+          # Clean up any bad configurations and fix slow Azure mirrors
           sudo rm -f /etc/apt/apt.conf.d/80-custom-timeouts /etc/apt/sources.list.d/*chrome* /etc/apt/sources.list.d/*google* 2>/dev/null || true
+          sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
 
-          # Add Cloudflare official apt keyring and repository
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          # Install only the tiny TPM libraries warp-svc needs (~30 KB total, takes 0.5s)
+          sudo apt-get install -y --no-install-recommends libtss2-tctildr0t64 libtss2-esys-3.0.2-0t64 2>/dev/null || true
 
-          # Fast update targeting ONLY the Cloudflare repository (skips slow Ubuntu/Azure archive mirrors)
-          sudo apt-get update -o Dir::Etc::sourcelist="sources.list.d/cloudflare-client.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
+          # Download official Cloudflare WARP package directly from Cloudflare edge CDN (fast 1-2s download)
+          WARP_DEB_PATH=$(curl -fsSL https://pkg.cloudflareclient.com/dists/noble/main/binary-amd64/Packages | grep -m1 '^Filename: ' | cut -d' ' -f2)
+          curl -fsSL -o /tmp/warp.deb "https://pkg.cloudflareclient.com/${WARP_DEB_PATH}"
 
-          # Install ONLY the headless daemon & CLI without 50+ unnecessary desktop GUI packages
-          sudo apt-get install -y --no-install-recommends cloudflare-warp
+          # Extract only warp-svc & warp-cli (completely skips 116 MB of WebKitGTK, GStreamer, and 60 desktop GUI packages)
+          mkdir -p /tmp/warp_pkg
+          dpkg-deb -x /tmp/warp.deb /tmp/warp_pkg
+          sudo cp -f /tmp/warp_pkg/bin/warp-svc /usr/bin/warp-svc
+          sudo cp -f /tmp/warp_pkg/bin/warp-cli /usr/bin/warp-cli
+          sudo ln -sf /usr/bin/warp-svc /bin/warp-svc
+          sudo ln -sf /usr/bin/warp-cli /bin/warp-cli
+          sudo cp -f /tmp/warp_pkg/lib/systemd/system/warp-svc.service /lib/systemd/system/warp-svc.service
+          sudo chmod +x /usr/bin/warp-svc /usr/bin/warp-cli
+          rm -rf /tmp/warp.deb /tmp/warp_pkg
 
-          # Ensure daemon is started and initialize WARP connection
-          sudo systemctl start warp-svc.service || true
+          # Grant network capabilities and start daemon
+          sudo setcap cap_setuid,cap_setgid,cap_net_raw,cap_dac_read_search,cap_net_admin,cap_net_bind_service,cap_sys_ptrace+ei /usr/bin/warp-svc
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now warp-svc.service
           sleep 2
+
+          # Register and connect WARP
           warp-cli --accept-tos registration new || true
           warp-cli --accept-tos mode warp || true
           warp-cli --accept-tos connect || true
           sleep 3
+
           echo "WARP Status:"
           warp-cli --accept-tos status || true
           echo "Outbound IP check:"
