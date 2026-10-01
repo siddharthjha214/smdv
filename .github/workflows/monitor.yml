@@ -47,8 +47,6 @@ jobs:
           dpkg-deb -x /tmp/warp.deb /tmp/warp_pkg
           sudo cp -f /tmp/warp_pkg/bin/warp-svc /usr/bin/warp-svc
           sudo cp -f /tmp/warp_pkg/bin/warp-cli /usr/bin/warp-cli
-          sudo ln -sf /usr/bin/warp-svc /bin/warp-svc
-          sudo ln -sf /usr/bin/warp-cli /bin/warp-cli
           sudo cp -f /tmp/warp_pkg/lib/systemd/system/warp-svc.service /lib/systemd/system/warp-svc.service
           sudo chmod +x /usr/bin/warp-svc /usr/bin/warp-cli
           rm -rf /tmp/warp.deb /tmp/warp_pkg
