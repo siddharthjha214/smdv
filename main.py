@@ -103,9 +103,27 @@ if os.path.exists("cookies.txt"):
 else:
     print("🚀 Operating in 100% Cookieless Autopilot Mode (PO Token Provider on :4416 + Cloudflare WARP).")
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec"
-CHANNEL_URL = "https://www.youtube.com/@SandeepSeminars/videos"
-CHANNEL_ID = "UCBqFKDipsnzvJdt6UT0lMIg"
-UPLOADS_PLAYLIST_ID = "UU" + CHANNEL_ID[2:]  # Uploads playlist = Channel ID with UC→UU
+
+CHANNELS = [
+    {
+        "key": "main",
+        "name": "Main Channel",
+        "url": "https://www.youtube.com/@SandeepSeminars/videos",
+        "channel_id": "UCBqFKDipsnzvJdt6UT0lMIg",
+        "uploads_playlist_id": "UUBqFKDipsnzvJdt6UT0lMIg",
+        "priority": 1,
+    },
+    {
+        "key": "spirituality",
+        "name": "Spirituality Channel",
+        "url": "https://www.youtube.com/@Sandeepmaheshwarispirituality/videos",
+        "channel_id": "UCaEtAfisWDXL3eG8u_M2brA",
+        "uploads_playlist_id": "UUaEtAfisWDXL3eG8u_M2brA",
+        "priority": 2,
+    }
+]
+
+channel_states = {}
 
 IST = pytz.timezone("Asia/Kolkata")
 DAILY_UPLOAD_QUOTA = 6
@@ -275,9 +293,11 @@ def get_youtube_client():
     )
     return build("youtube", "v3", credentials=credentials)
 
-def scan_channel_via_api():
+def scan_channel_via_api(uploads_playlist_id=None):
     """Scan all videos from the channel using YouTube Data API (no cookies/scraping needed)."""
-    print("Scanning channel via YouTube Data API...")
+    if not uploads_playlist_id:
+        uploads_playlist_id = CHANNELS[0]["uploads_playlist_id"]
+    print(f"Scanning playlist {uploads_playlist_id} via YouTube Data API...")
     youtube = get_youtube_client()
     if not youtube:
         print("ERROR: YouTube API credentials missing — cannot scan via API.")
@@ -290,7 +310,7 @@ def scan_channel_via_api():
         try:
             request = youtube.playlistItems().list(
                 part="snippet",
-                playlistId=UPLOADS_PLAYLIST_ID,
+                playlistId=uploads_playlist_id,
                 maxResults=50,
                 pageToken=next_page_token
             )
@@ -317,14 +337,14 @@ def scan_channel_via_api():
     print(f"API scan complete: found {len(all_videos)} videos.")
     return all_videos
 
-def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run):
+def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run, channel_key="main"):
     """
     Checks if every backup video marked 'Backed Up' in the sheet still
     exists on the backup YouTube channel. If YouTube deleted any of them
     (copyright strike, enforcement, etc.), this immediately re-uploads them
     in the same run. Returns the updated quota_used count.
     """
-    print("Verifying backup videos still exist on YouTube...")
+    print(f"Verifying backup videos still exist on YouTube for {channel_key}...")
     youtube = get_youtube_client()
     if not youtube:
         print("WARNING: YouTube credentials missing — skipping backup verification.")
@@ -338,7 +358,7 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
     }
 
     if not to_check:
-        print("No backed-up videos to verify.")
+        print(f"No backed-up videos to verify for {channel_key}.")
         return quota_used
 
     # YouTube API allows checking up to 50 video IDs at once
@@ -357,13 +377,13 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
     # Find which backup videos were deleted by YouTube and re-upload them
     for source_vid, backup_vid in to_check.items():
         if backup_vid not in existing_backup_ids:
-            print(f"Backup video {backup_vid} was DELETED by YouTube — scheduling immediate re-upload.")
+            print(f"Backup video {backup_vid} ({channel_key}) was DELETED by YouTube — scheduling immediate re-upload.")
 
             # Reset in Google Sheets first
             try:
                 requests.post(
                     GOOGLE_SCRIPT_URL,
-                    json={"type": "force_pending", "video_id": source_vid},
+                    json={"type": "force_pending", "video_id": source_vid, "channel": channel_key},
                     timeout=15
                 )
             except Exception as e:
@@ -382,7 +402,7 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
                 print(f"Re-uploading: {title}")
                 new_backup_id = download_and_backup(source_vid, url, title)
                 if new_backup_id:
-                    update_backup_in_sheet(source_vid, today_date, new_backup_id)
+                    update_backup_in_sheet(source_vid, today_date, new_backup_id, channel_key=channel_key)
                     db_active_videos[source_vid]["backup_status"] = "Backed Up"
                     db_active_videos[source_vid]["backup_video_id"] = new_backup_id
                     db_active_videos[source_vid]["backup_date"] = today_date
@@ -394,7 +414,7 @@ def check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, ba
             else:
                 print(f"Daily quota reached — {source_vid} will be re-uploaded on the next run.")
 
-    print("Backup verification complete.")
+    print(f"Backup verification complete for {channel_key}.")
     return quota_used
 
 def make_video_public(video_id):
@@ -431,7 +451,7 @@ def make_video_public(video_id):
         print(f"ERROR: Failed to make video {video_id} public: {e}")
         return False
 
-def update_backup_in_sheet(video_id, today_date, backup_video_id=None, retries=3):
+def update_backup_in_sheet(video_id, today_date, backup_video_id=None, channel_key="main", retries=3):
     """Update Google Sheets backup status with retry logic."""
     for attempt in range(retries):
         try:
@@ -439,6 +459,7 @@ def update_backup_in_sheet(video_id, today_date, backup_video_id=None, retries=3
                 GOOGLE_SCRIPT_URL,
                 json={
                     "type": "update_backup",
+                    "channel": channel_key,
                     "video_id": video_id,
                     "backup_status": "Backed Up",
                     "backup_date": today_date,
@@ -447,40 +468,37 @@ def update_backup_in_sheet(video_id, today_date, backup_video_id=None, retries=3
                 timeout=15
             )
             if resp.status_code == 200:
-                print(f"Sheet updated: {video_id} marked as Backed Up.")
+                print(f"Sheet updated: {video_id} marked as Backed Up ({channel_key}).")
                 return True
             else:
                 print(f"Sheet update attempt {attempt+1} failed: HTTP {resp.status_code}")
         except Exception as e:
             print(f"Sheet update attempt {attempt+1} error: {e}")
-    print(f"WARNING: Failed to update sheet for {video_id} after {retries} attempts!")
+    print(f"WARNING: Failed to update sheet for {video_id} ({channel_key}) after {retries} attempts!")
     return False
 
-def is_already_backed_up(video_id):
+def is_already_backed_up(video_id, channel_key="main"):
     """Live re-check of the sheet RIGHT before downloading. Falls back to verified in-memory state on timeout."""
     # First check in-memory state
-    try:
-        if db_active_videos and db_active_videos.get(video_id, {}).get("backup_status") == "Backed Up":
-            print(f"IN-MEMORY CHECK: {video_id} is already 'Backed Up' — SKIPPING.")
-            return True
-    except Exception:
-        pass
+    state = channel_states.get(channel_key)
+    if state and state.get("db_active_videos", {}).get(video_id, {}).get("backup_status") == "Backed Up":
+        print(f"IN-MEMORY CHECK: {video_id} is already 'Backed Up' ({channel_key}) — SKIPPING.")
+        return True
 
     try:
-        resp = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=30)
+        resp = requests.get(f"{GOOGLE_SCRIPT_URL}?action=get_active_videos&channel={channel_key}", allow_redirects=True, timeout=30)
         if resp.status_code == 200:
             live_data = resp.json()
             if isinstance(live_data, dict):
                 status = live_data.get(video_id, {}).get("backup_status", "Pending")
                 if status == "Backed Up":
-                    print(f"LIVE SHEET CHECK: {video_id} is already 'Backed Up' — SKIPPING download to prevent duplicate.")
+                    print(f"LIVE SHEET CHECK: {video_id} is already 'Backed Up' ({channel_key}) — SKIPPING download to prevent duplicate.")
                     return True
                 return False
     except Exception as e:
-        print(f"Live sheet check network warning for {video_id}: {e}. Falling back to in-memory sheet state.")
+        print(f"Live sheet check network warning for {video_id} ({channel_key}): {e}. Falling back to in-memory sheet state.")
 
-    # Fallback to in-memory state fetched at startup rather than aborting download
-    if db_active_videos and db_active_videos.get(video_id, {}).get("backup_status") == "Backed Up":
+    if state and state.get("db_active_videos", {}).get(video_id, {}).get("backup_status") == "Backed Up":
         return True
     return False
 
@@ -849,50 +867,53 @@ def download_and_backup(video_id, url, title):
 # ==========================================
 # 1. FETCH STATE FROM GOOGLE SHEETS
 # ==========================================
-print("Fetching current active videos from Google Sheets...")
-db_active_videos = None
-for attempt in range(5):
-    try:
-        response = requests.get(GOOGLE_SCRIPT_URL + "?action=get_active_videos", allow_redirects=True, timeout=45)
-        response.raise_for_status()
-        db_active_videos = response.json()
-        if not isinstance(db_active_videos, dict):
-            raise ValueError("Response is not a valid JSON dictionary")
-        break
-    except Exception as e:
-        print(f"Failed to get active videos (Attempt {attempt+1}/5). Error: {e}")
-        if attempt < 4:
-            import time
-            time.sleep(15)  # Let Google's servers cool down to avoid 404 anti-abuse triggers
+print("Fetching current active videos from Google Sheets for all channels...")
+for ch in CHANNELS:
+    ckey = ch["key"]
+    cname = ch["name"]
+    print(f"Fetching active videos for {cname} ({ckey})...")
+    db_active = None
+    for attempt in range(5):
+        try:
+            response = requests.get(f"{GOOGLE_SCRIPT_URL}?action=get_active_videos&channel={ckey}", allow_redirects=True, timeout=45)
+            response.raise_for_status()
+            db_active = response.json()
+            if not isinstance(db_active, dict):
+                raise ValueError("Response is not a valid JSON dictionary")
+            break
+        except Exception as e:
+            print(f"Failed to get active videos for {ckey} (Attempt {attempt+1}/5). Error: {e}")
+            if attempt < 4:
+                time.sleep(15)
 
-if db_active_videos is None:
-    print("CRITICAL ERROR: Failed to get active videos from Google Sheets after multiple attempts.")
-    print("Aborting run to prevent data corruption (e.g. treating sheet as empty).")
-    exit(1)
+    if db_active is None:
+        print(f"CRITICAL ERROR: Failed to get active videos for {ckey} from Google Sheets. Aborting.")
+        exit(1)
 
-is_first_run = len(db_active_videos) == 0
+    channel_states[ckey] = {
+        "config": ch,
+        "db_active_videos": db_active,
+        "is_first_run": len(db_active) == 0,
+        "backed_up_this_run": set(vid for vid, data in db_active.items() if data.get("backup_status") == "Backed Up")
+    }
+
 today_date = get_current_date()
 
-# Seed backed_up_this_run from sheet so cross-run duplicates are caught immediately
-backed_up_this_run = set(
-    vid for vid, data in db_active_videos.items()
-    if data.get("backup_status") == "Backed Up"
-)
-
-# Count quota used today
+# Count unified quota used today across all channels
 quota_used = 0
-for vid, data in db_active_videos.items():
-    if data.get("backup_status") == "Backed Up":
-        bd = str(data.get("backup_date", "")).lstrip("'")
-        if bd == today_date:
-            quota_used += 1
-        elif "T" in bd and bd.endswith("Z"):
-            try:
-                dt_utc = datetime.strptime(bd[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.utc)
-                if dt_utc.astimezone(IST).strftime("%d %B %Y") == today_date:
-                    quota_used += 1
-            except Exception:
-                pass
+for ckey, state in channel_states.items():
+    for vid, data in state["db_active_videos"].items():
+        if data.get("backup_status") == "Backed Up":
+            bd = str(data.get("backup_date", "")).lstrip("'")
+            if bd == today_date:
+                quota_used += 1
+            elif "T" in bd and bd.endswith("Z"):
+                try:
+                    dt_utc = datetime.strptime(bd[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.utc)
+                    if dt_utc.astimezone(IST).strftime("%d %B %Y") == today_date:
+                        quota_used += 1
+                except Exception:
+                    pass
 
 # Check if it's past 10:30 PM (22:30) IST. If so, raise the backlog quota to 6 to use the reserved slot.
 now_ist = datetime.now(pytz.utc).astimezone(IST)
@@ -901,42 +922,45 @@ if now_ist.hour > 22 or (now_ist.hour == 22 and now_ist.minute >= 30):
     print("Time is past 10:30 PM IST. Raising DAILY_BACKLOG_QUOTA to 6 to utilize the reserved slot.")
 
 print(f"Daily Quota Used: {quota_used}/{DAILY_UPLOAD_QUOTA}")
-print(f"Already backed up (all time): {len(backed_up_this_run)} videos — will not re-upload these.")
+for ckey, state in channel_states.items():
+    print(f"[{state['config']['name']}] Already backed up (all time): {len(state['backed_up_this_run'])} videos.")
 
 # ==========================================
 # CHECK: Did YouTube silently delete any of our backup videos?
 # ==========================================
-if not is_first_run:
-    quota_used = check_and_reset_deleted_backups(db_active_videos, today_date, quota_used, backed_up_this_run)
-
+for ckey, state in channel_states.items():
+    if not state["is_first_run"]:
+        quota_used = check_and_reset_deleted_backups(
+            state["db_active_videos"],
+            today_date,
+            quota_used,
+            state["backed_up_this_run"],
+            channel_key=ckey
+        )
 
 # ==========================================
-# 2. FETCH YOUTUBE DATA
+# 2. FETCH YOUTUBE DATA FOR BOTH CHANNELS
 # ==========================================
-print("Scanning channel...")
-channel_entries = []
+def scan_channel_videos(channel_config):
+    """Scan channel videos using YouTube Data API first, falling back to yt-dlp scraping."""
+    cname = channel_config["name"]
+    print(f"\nScanning {cname}...")
+    api_videos = scan_channel_via_api(channel_config["uploads_playlist_id"])
+    if api_videos is not None and len(api_videos) > 0:
+        print(f"[{cname}] Scan successful via API: {len(api_videos)} videos found.")
+        return api_videos
 
-# Primary method: YouTube Data API (reliable, no cookies/IP issues)
-api_videos = scan_channel_via_api()
-if api_videos is not None and len(api_videos) > 0:
-    channel_entries = api_videos
-    print(f"Channel scan successful via API: {len(channel_entries)} videos found.")
-else:
-    # Fallback: yt-dlp scraping (may fail due to cookies/IP, but worth trying)
-    print("API scan failed or returned empty. Falling back to yt-dlp scraping...")
+    print(f"[{cname}] API scan failed or returned empty. Falling back to yt-dlp scraping...")
     info = None
     for _attempt in range(3):
         try:
             with yt_dlp.YoutubeDL(ydl_opts_fast) as ydl:
-                info = ydl.extract_info(CHANNEL_URL, download=False)
-            break  # success — exit retry loop
+                info = ydl.extract_info(channel_config["url"], download=False)
+            break
         except Exception as scan_err:
             err_str = str(scan_err).lower()
-            print(f"Channel scan attempt {_attempt + 1}/3 failed: {scan_err}")
-            
-            # If the error is about cookies being invalid or badly formatted, retry without cookies
+            print(f"[{cname}] scan attempt {_attempt + 1}/3 failed: {scan_err}")
             if "cookie" in err_str or "netscape format" in err_str:
-                print("Cookie error detected! Retrying without cookies...")
                 if os.path.exists("cookies.txt"):
                     try: os.remove("cookies.txt")
                     except: pass
@@ -944,32 +968,33 @@ else:
                     del ydl_opts_fast["cookiefile"]
                 if "cookiesfrombrowser" in ydl_opts_fast:
                     del ydl_opts_fast["cookiesfrombrowser"]
-            
             if _attempt < 2:
-                import time; time.sleep(10)
-    
+                time.sleep(10)
+
     if info is not None and info.get("entries"):
-        channel_entries = [
-            {"id": v.get("id", ""), "title": v.get("title", "Unknown Title")}
+        return [
+            {
+                "id": v.get("id", ""),
+                "title": v.get("title", "Unknown Title"),
+                "timestamp": v.get("timestamp"),
+                "upload_date": v.get("upload_date"),
+                "release_timestamp": v.get("release_timestamp")
+            }
             for v in info["entries"]
             if v.get("id")
         ]
+    return []
 
-if not channel_entries:
-    print("CRITICAL: Could not scan channel via API or yt-dlp. Exiting.")
-    exit(1)
+# Scan channels in priority order
+channel_scans = {}
+for ch in CHANNELS:
+    entries = scan_channel_videos(ch)
+    if not entries:
+        print(f"CRITICAL: Could not scan {ch['name']} via API or yt-dlp. Exiting.")
+        exit(1)
+    channel_scans[ch["key"]] = entries
 
-current_channel_ids = []
 new_video_processed = False
-
-# ==========================================
-# SCAN SANITY CHECK — prevent mass false-deletion
-# ==========================================
-# How many videos does the sheet currently know about?
-db_known_count = len(db_active_videos)
-# We set this flag AFTER populating current_channel_ids (see after the loop below).
-# It controls whether the deleted-video section is allowed to run.
-scan_looks_valid = True  # will be re-evaluated after the scan loop
 
 # Deep extraction options (with cookies + anti-bot settings, matching ydl_opts_fast)
 ydl_opts_deep = {
@@ -978,7 +1003,7 @@ ydl_opts_deep = {
     "retries": 3,
     "sleep_interval": 3,
     "max_sleep_interval": 8,
-    "remote_components": ["ejs:github"],      # Download JS challenge solver from GitHub (required for n-param)
+    "remote_components": ["ejs:github"],
     "http_headers": {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
@@ -986,25 +1011,28 @@ ydl_opts_deep = {
 if os.path.exists("cookies.txt"):
     ydl_opts_deep["cookiefile"] = "cookies.txt"
 
-for video in channel_entries:
-    try:
-        video_id = video.get("id", "")
-        if not video_id:
-            continue
-            
-        current_channel_ids.append(video_id)
-        title = video.get("title", "Unknown Title")
-        url = f"https://youtube.com/watch?v={video_id}"
+# ==========================================
+# PRIORITY #1 & #2: NEW VIDEOS (Main Channel First!)
+# ==========================================
+for ch in sorted(CHANNELS, key=lambda c: c["priority"]):
+    ckey = ch["key"]
+    cname = ch["name"]
+    state = channel_states[ckey]
+    db_active = state["db_active_videos"]
+    entries = channel_scans[ckey]
 
-        # ==========================================
-        # PRIORITY #1: NEW VIDEO DETECTED
-        # ==========================================
-        if video_id not in db_active_videos:
-            print(f"New video found: {video_id}")
-            
-            # Deep extraction for exact upload time.
-            # IMPORTANT: uses ydl_opts_deep (with cookies + anti-bot headers) to avoid bot-detection.
-            # Falls back to flat-scan date if deep extraction fails — video is still registered.
+    current_ids = []
+    for video in entries:
+        vid_id = video.get("id")
+        if not vid_id:
+            continue
+        current_ids.append(vid_id)
+        title = video.get("title", "Unknown Title")
+        url = f"https://youtube.com/watch?v={vid_id}"
+
+        if vid_id not in db_active:
+            print(f"[{cname}] 🚨 New video found: {vid_id} - {title}")
+
             upload_date_raw = None
             try:
                 with yt_dlp.YoutubeDL(ydl_opts_deep) as ydl_deep:
@@ -1016,8 +1044,7 @@ for video in channel_entries:
                         deep_info.get("release_date")
                     )
             except Exception as deep_err:
-                # Deep extraction failed (e.g. bot detection). Use the flat-scan date if present.
-                print(f"WARNING: Deep extraction failed for {video_id} ({deep_err}). Using flat-scan metadata.")
+                print(f"WARNING: Deep extraction failed for {vid_id} ({deep_err}). Using scan metadata.")
                 upload_date_raw = (
                     video.get("timestamp") or
                     video.get("release_timestamp") or
@@ -1027,25 +1054,24 @@ for video in channel_entries:
 
             upload_time = format_youtube_date(upload_date_raw) if upload_date_raw else "Unknown"
 
-            # Register video in Google Sheets — happens even if deep extraction failed.
-            # This prevents the bot from treating the same video as "new" on every subsequent run.
+            # Register video in Google Sheets
             try:
                 requests.post(
                     GOOGLE_SCRIPT_URL,
                     json={
                         "type": "new_video",
+                        "channel": ckey,
                         "title": title,
                         "upload_time": upload_time,
-                        "video_id": video_id,
+                        "video_id": vid_id,
                         "url": url
                     },
                     timeout=15
                 )
             except Exception as sheet_err:
-                print(f"WARNING: Could not post new video {video_id} to sheet: {sheet_err}")
+                print(f"WARNING: Could not post new video {vid_id} to sheet: {sheet_err}")
 
-            # Add to local cache so we don't treat it as missing later
-            db_active_videos[video_id] = {
+            db_active[vid_id] = {
                 "title": title,
                 "upload_time": upload_time,
                 "status": "Active",
@@ -1054,8 +1080,8 @@ for video in channel_entries:
                 "backup_date": ""
             }
 
-            if not is_first_run:
-                message = f"🚨 NEW VIDEO UPLOADED 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
+            if not state["is_first_run"]:
+                message = f"🚨 NEW VIDEO UPLOADED ({cname.upper()}) 🚨\n\nTitle:\n{title}\n\nUpload Date:\n{upload_time}\n\nURL:\n{url}"
                 if BOT_TOKEN:
                     try:
                         requests.post(
@@ -1065,115 +1091,139 @@ for video in channel_entries:
                         )
                     except Exception as tg_err:
                         print(f"WARNING: Telegram notification failed: {tg_err}")
-                
-                # ⚠️ DUPLICATE GUARD: Check in-memory state + live sheet re-check before downloading
-                if quota_used < DAILY_UPLOAD_QUOTA and video_id not in backed_up_this_run:
-                    if is_already_backed_up(video_id):  # Live re-check right before download
-                        backed_up_this_run.add(video_id)  # Sync in-memory state
+
+                # DUPLICATE GUARD: Check in-memory state + live sheet before downloading
+                if quota_used < DAILY_UPLOAD_QUOTA and vid_id not in state["backed_up_this_run"]:
+                    if is_already_backed_up(vid_id, channel_key=ckey):
+                        state["backed_up_this_run"].add(vid_id)
                     else:
-                        print("Prioritizing new video for backup...")
-                        backup_vid_id = download_and_backup(video_id, url, title)
+                        print(f"Prioritizing new video from {cname} for backup...")
+                        backup_vid_id = download_and_backup(vid_id, url, title)
                         if backup_vid_id:
-                            sheet_updated = update_backup_in_sheet(video_id, today_date, backup_vid_id)
+                            sheet_updated = update_backup_in_sheet(vid_id, today_date, backup_vid_id, channel_key=ckey)
                             if not sheet_updated:
-                                print(f"WARNING: Upload succeeded but sheet update FAILED for {video_id}. Retrying once more...")
-                                update_backup_in_sheet(video_id, today_date, backup_vid_id)  # One extra retry
-                            db_active_videos[video_id]["backup_status"] = "Backed Up"
-                            db_active_videos[video_id]["backup_date"] = today_date
-                            db_active_videos[video_id]["backup_video_id"] = backup_vid_id
-                            backed_up_this_run.add(video_id)
+                                print(f"WARNING: Upload succeeded but sheet update FAILED for {vid_id}. Retrying...")
+                                update_backup_in_sheet(vid_id, today_date, backup_vid_id, channel_key=ckey)
+                            db_active[vid_id]["backup_status"] = "Backed Up"
+                            db_active[vid_id]["backup_date"] = today_date
+                            db_active[vid_id]["backup_video_id"] = backup_vid_id
+                            state["backed_up_this_run"].add(vid_id)
                             quota_used += 1
                             new_video_processed = True
                         else:
-                            print(f"Download/upload failed for {video_id}. Will retry next run.")
-                elif video_id in backed_up_this_run:
-                    print(f"SKIPPED: {video_id} is already marked as Backed Up — preventing duplicate upload.")
+                            print(f"Download/upload failed for {vid_id}. Will retry next run.")
+                elif vid_id in state["backed_up_this_run"]:
+                    print(f"SKIPPED: {vid_id} is already marked as Backed Up.")
                 else:
-                    print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup new video tomorrow.")
+                    print(f"Daily quota reached ({DAILY_UPLOAD_QUOTA}). Will backup tomorrow.")
             else:
-                print("(Skipped Telegram notification & Backup because this is the first initial setup run)")
+                print(f"(Skipped notification & Backup for {cname} because this is the first initial setup run)")
 
-    except Exception as e:
-        print("ERROR on video parsing:", e)
+    state["current_channel_ids"] = current_ids
 
 # ==========================================
-# PRIORITY #2: BACKLOG DOWNLOADS (oldest first — 2012 → present)
+# PRIORITY #3: BACKLOG DOWNLOADS (Main Channel First!)
 # ==========================================
-if not is_first_run and not new_video_processed and quota_used < DAILY_BACKLOG_QUOTA:
-    print("Checking for backlog videos to backup (oldest first)...")
+if not new_video_processed and quota_used < DAILY_BACKLOG_QUOTA:
+    print(f"Checking for backlog videos to backup (Daily Backlog Quota: {quota_used}/{DAILY_BACKLOG_QUOTA})...")
     
-    # Go through ALL videos oldest→newest (YouTube returns newest first, so we reverse)
     pending_video_to_backup = None
-    for video_id in reversed(current_channel_ids):
-        vid_data = db_active_videos.get(video_id, {})
-        status = vid_data.get("backup_status", "Pending")
-        if status in ("Backed Up", "YouTube Removed"):
-            continue  # Skip already backed up or permanently removed videos
-        if video_id not in backed_up_this_run:
-            print(f"Found oldest pending video for backup: {video_id} — {vid_data.get('title', '')}")
-            pending_video_to_backup = video_id
+    target_channel_key = None
+
+    # Check channels in priority order: Main Channel first, then Spirituality!
+    for ch in sorted(CHANNELS, key=lambda c: c["priority"]):
+        ckey = ch["key"]
+        cname = ch["name"]
+        state = channel_states[ckey]
+        if state["is_first_run"]:
+            continue
+
+        db_active = state["db_active_videos"]
+        current_ids = state.get("current_channel_ids", [])
+
+        # Look for oldest pending video (YouTube returns newest first, so reversed)
+        for vid_id in reversed(current_ids):
+            vid_data = db_active.get(vid_id, {})
+            status = vid_data.get("backup_status", "Pending")
+            if status in ("Backed Up", "YouTube Removed"):
+                continue
+            if vid_id not in state["backed_up_this_run"]:
+                print(f"[{cname}] Found oldest pending backlog video: {vid_id} — {vid_data.get('title', '')}")
+                pending_video_to_backup = vid_id
+                target_channel_key = ckey
+                break
+
+        if pending_video_to_backup:
             break
 
-    
-    if pending_video_to_backup:
-        video_id = pending_video_to_backup
-        db_info = db_active_videos.get(video_id, {})
+    if pending_video_to_backup and target_channel_key:
+        state = channel_states[target_channel_key]
+        db_active = state["db_active_videos"]
+        db_info = db_active.get(pending_video_to_backup, {})
         title = db_info.get("title", "Unknown Title")
-        url = db_info.get("url", f"https://youtube.com/watch?v={video_id}")
-        
-        if is_already_backed_up(video_id):  # Live re-check before backlog download too
-            backed_up_this_run.add(video_id)
+        url = db_info.get("url", f"https://youtube.com/watch?v={pending_video_to_backup}")
+
+        if is_already_backed_up(pending_video_to_backup, channel_key=target_channel_key):
+            state["backed_up_this_run"].add(pending_video_to_backup)
         else:
-            backup_vid_id = download_and_backup(video_id, url, title)
+            backup_vid_id = download_and_backup(pending_video_to_backup, url, title)
             if backup_vid_id:
-                update_backup_in_sheet(video_id, today_date, backup_vid_id)
-                backed_up_this_run.add(video_id)
+                update_backup_in_sheet(pending_video_to_backup, today_date, backup_vid_id, channel_key=target_channel_key)
+                state["backed_up_this_run"].add(pending_video_to_backup)
+                db_active[pending_video_to_backup]["backup_status"] = "Backed Up"
+                db_active[pending_video_to_backup]["backup_date"] = today_date
+                db_active[pending_video_to_backup]["backup_video_id"] = backup_vid_id
                 quota_used += 1
     else:
-        print("No pending backlog videos found.")
-        
-    # We only process ONE backlog video per run to prevent GitHub Actions timeout!
+        print("No pending backlog videos found across all channels.")
+
 elif quota_used >= DAILY_BACKLOG_QUOTA:
     print(f"Daily backlog quota of {DAILY_BACKLOG_QUOTA} reached. Reserved 1 slot for new videos today.")
 
 # ==========================================
-# 3. CHECK FOR DELETED OR PRIVATE VIDEOS
+# 3. CHECK FOR DELETED OR PRIVATE VIDEOS (Both Channels)
 # ==========================================
-# SAFETY GUARD: Only run deleted-video detection if the channel scan looks complete.
-# If the scan returned far fewer videos than we know exist (e.g. yt-dlp was blocked
-# mid-scan and returned partial results), running this section would incorrectly mark
-# hundreds of videos as deleted — which is exactly what wiped the sheet.
-if db_known_count > 0 and len(current_channel_ids) < db_known_count * 0.5:
-    scan_looks_valid = False
-    print(
-        f"WARNING: Channel scan returned only {len(current_channel_ids)} videos but the sheet "
-        f"has {db_known_count}. This looks like a partial/failed scan — "
-        f"SKIPPING deleted-video detection to prevent false mass-deletion."
-    )
+for ch in CHANNELS:
+    ckey = ch["key"]
+    cname = ch["name"]
+    state = channel_states[ckey]
+    if state["is_first_run"]:
+        continue
 
-if not is_first_run and scan_looks_valid:
-    print("Checking for deleted videos...")
-    for db_video_id, db_video_data in db_active_videos.items():
-        if db_video_id not in current_channel_ids:
-            print(f"Deleted/Private video found: {db_video_id}")
-            
+    db_active = state["db_active_videos"]
+    current_ids = state.get("current_channel_ids", [])
+    db_known_count = len(db_active)
+
+    # Sanity guard: prevent mass false-deletion
+    if db_known_count > 0 and len(current_ids) < db_known_count * 0.5:
+        print(
+            f"WARNING: [{cname}] scan returned only {len(current_ids)} videos but sheet has {db_known_count}. "
+            f"Skipping deleted-video check to prevent false deletion."
+        )
+        continue
+
+    print(f"Checking for deleted videos on {cname}...")
+    for db_video_id, db_video_data in db_active.items():
+        if db_video_id not in current_ids:
+            print(f"[{cname}] Deleted/Private video found: {db_video_id}")
             original_title = db_video_data.get("title", "Unknown")
             original_upload_time = db_video_data.get("upload_time", "Unknown")
             video_url = db_video_data.get("url", f"https://youtube.com/watch?v={db_video_id}")
             deleted_time = get_current_time()
             status = "Deleted/Private"
             backup_video_id = db_video_data.get("backup_video_id", "")
-            
+
             # Automatically make the backup video public!
             if backup_video_id:
                 make_video_public(backup_video_id)
-            
+
             # Send to Google Sheets
             try:
                 requests.post(
                     GOOGLE_SCRIPT_URL,
                     json={
                         "type": "deleted_video",
+                        "channel": ckey,
                         "title": original_title,
                         "original_upload_time": original_upload_time,
                         "deleted_time": deleted_time,
@@ -1188,7 +1238,7 @@ if not is_first_run and scan_looks_valid:
                 print(f"WARNING: Failed to post deleted-video to sheet for {db_video_id}: {del_err}")
 
             # Telegram Notification
-            message = f"❌ VIDEO DELETED OR MADE PRIVATE ❌\n\nOriginal Title:\n{original_title}\n\nOriginal Upload Date:\n{original_upload_time}\n\nDeleted Time:\n{deleted_time}\n\nURL:\n{video_url}"
+            message = f"❌ [{cname.upper()}] VIDEO DELETED OR MADE PRIVATE ❌\n\nOriginal Title:\n{original_title}\n\nOriginal Upload Date:\n{original_upload_time}\n\nDeleted Time:\n{deleted_time}\n\nURL:\n{video_url}"
             if BOT_TOKEN:
                 try:
                     requests.post(
@@ -1200,10 +1250,12 @@ if not is_first_run and scan_looks_valid:
                     print(f"WARNING: Telegram notification failed for {db_video_id}: {tg_err}")
 
 # Trigger sheet sorting to ensure newest videos are always at the top
-try:
-    requests.post(GOOGLE_SCRIPT_URL, json={"type": "sort_sheet"}, timeout=15)
-    print("Triggered final sheet sort.")
-except Exception as e:
-    print(f"WARNING: Failed to trigger sheet sort: {e}")
+for ch in CHANNELS:
+    ckey = ch["key"]
+    try:
+        requests.post(GOOGLE_SCRIPT_URL, json={"type": "sort_sheet", "channel": ckey}, timeout=15)
+        print(f"Triggered sheet sort for {ckey}.")
+    except Exception as e:
+        print(f"WARNING: Failed to trigger sheet sort for {ckey}: {e}")
 
 print("BOT COMPLETED SUCCESSFULLY")

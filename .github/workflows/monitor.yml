@@ -1,6 +1,8 @@
 name: YouTube Tracker
 
 on:
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 concurrency:
