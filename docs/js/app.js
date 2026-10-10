@@ -14,7 +14,7 @@ const CHANNELS = {
         youtubeUrl: "https://www.youtube.com/@SandeepSeminars",
         videosUrl: "https://www.youtube.com/@SandeepSeminars/videos",
         subtitle: "Tracking Sandeep Maheshwari in real-time. Catch all deleted and active content right here.",
-        notice: "This tracker has been monitoring Sandeep Maheshwari's channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here."
+        notice: "Main Channel monitored since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here. Note: Automated tracking may occasionally experience sync delays or errors."
     },
     spirituality: {
         key: "spirituality",
@@ -23,7 +23,7 @@ const CHANNELS = {
         youtubeUrl: "https://www.youtube.com/@Sandeepmaheshwarispirituality",
         videosUrl: "https://www.youtube.com/@Sandeepmaheshwarispirituality/videos",
         subtitle: "Tracking Sandeep Maheshwari Spirituality in real-time. Catch all deleted and active content right here.",
-        notice: "This tracker has been monitoring Sandeep Maheshwari's Spirituality channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here."
+        notice: "Spirituality Channel monitored since <strong>October 2026</strong>. Only deletions detected from that date onwards are listed here. Note: Automated tracking may occasionally experience sync delays or errors."
     }
 };
 
