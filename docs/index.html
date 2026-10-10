@@ -104,15 +104,24 @@
                 </div>
 
                 <!-- Coverage Timeline & Accuracy Note -->
-                <div class="coverage-banner" role="note" aria-label="Monitoring timeline and accuracy note">
-                    <div class="coverage-item">
-                        <i class="bx bx-calendar-check coverage-icon" aria-hidden="true"></i>
-                        <span><strong>Main Channel</strong> monitored since <strong>May 2026</strong> · <strong>Spirituality</strong> monitored since <strong>October 2026</strong></span>
+                <div class="coverage-bar" role="note" aria-label="Monitoring timeline and accuracy note">
+                    <div class="coverage-pill-group">
+                        <div class="coverage-pill">
+                            <span class="live-pulse pulse-red" aria-hidden="true"></span>
+                            <span class="pill-name">Main Channel</span>
+                            <span class="pill-divider">·</span>
+                            <span class="pill-time">Monitored since May 2026</span>
+                        </div>
+                        <div class="coverage-pill">
+                            <span class="live-pulse pulse-purple" aria-hidden="true"></span>
+                            <span class="pill-name">Spirituality</span>
+                            <span class="pill-divider">·</span>
+                            <span class="pill-time">Monitored since Oct 2026</span>
+                        </div>
                     </div>
-                    <span class="coverage-dot" aria-hidden="true">·</span>
-                    <div class="coverage-item disclaimer-item">
-                        <i class="bx bx-info-circle disclaimer-icon" aria-hidden="true"></i>
-                        <span>Automated tracker — unintentional sync delays or mistakes may occasionally occur.</span>
+                    <div class="coverage-disclaimer">
+                        <i class="bx bx-shield-quarter" aria-hidden="true"></i>
+                        <span>Automated fan tracker — occasional sync delays or unintentional mistakes may occur.</span>
                     </div>
                 </div>
 
@@ -230,12 +239,52 @@
 
                     <hr class="contact-divider">
 
-                    <!-- Milestone card -->
-                    <div class="milestone-card">
-                        <div class="milestone-icon"><i class="bx bx-calendar-check"></i></div>
-                        <div>
-                            <strong>Monitoring Timeline &amp; System Accuracy</strong>
-                            <p>Main Channel actively monitored in real-time since <strong>May 2026</strong> · Spirituality Channel since <strong>October 2026</strong>. Because this is an automated fan-operated system, minor delays or mistakes can occasionally happen. If you notice any discrepancy or missing video, please reach out via email below!</p>
+                    <!-- Monitoring Timeline & Accuracy Showcase Card -->
+                    <div class="accuracy-showcase-card">
+                        <div class="showcase-header">
+                            <div class="showcase-badge">
+                                <span class="badge-dot" aria-hidden="true"></span>
+                                <span>Platform Transparency</span>
+                            </div>
+                            <h3 class="showcase-title">Monitoring Timeline &amp; System Accuracy</h3>
+                        </div>
+
+                        <div class="showcase-channels-grid">
+                            <div class="channel-track-card track-main">
+                                <div class="track-card-header">
+                                    <div class="track-icon"><i class="bx bxl-youtube"></i></div>
+                                    <span class="track-status-pill">Active Live Sync</span>
+                                </div>
+                                <h4 class="track-name">Main Channel</h4>
+                                <div class="track-since-chip">
+                                    <span class="chip-caption">Monitored Since</span>
+                                    <strong class="chip-val">May 2026</strong>
+                                </div>
+                                <p class="track-note">24/7 autonomous monitoring of uploads, visibility changes, and deleted content.</p>
+                            </div>
+
+                            <div class="channel-track-card track-spirituality">
+                                <div class="track-card-header">
+                                    <div class="track-icon"><i class="bx bx-spa"></i></div>
+                                    <span class="track-status-pill">Active Live Sync</span>
+                                </div>
+                                <h4 class="track-name">Spirituality Channel</h4>
+                                <div class="track-since-chip">
+                                    <span class="chip-caption">Monitored Since</span>
+                                    <strong class="chip-val">October 2026</strong>
+                                </div>
+                                <p class="track-note">Continuous indexing of spiritual discourses, camp sessions, and deleted archives.</p>
+                            </div>
+                        </div>
+
+                        <div class="showcase-accuracy-notice">
+                            <div class="notice-icon-box">
+                                <i class="bx bx-shield-quarter"></i>
+                            </div>
+                            <div class="notice-content">
+                                <strong>System Accuracy &amp; Honest Disclaimer</strong>
+                                <p>Because this platform is an automated, fan-operated monitoring tool, minor delays or mistakes can occasionally happen. If you ever spot any missing video, incorrect status, or discrepancy, please reach out via email below — corrections are made promptly!</p>
+                            </div>
                         </div>
                     </div>
 
