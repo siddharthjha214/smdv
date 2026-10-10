@@ -6,14 +6,43 @@
 const GOOGLE_SCRIPT_URL =
     "https://script.google.com/macros/s/AKfycbyAarmgcJWsMYdHW9fhbKrTZXGsu77TFKVAQanMZmTY1xdgtq320MgiZfusuLvXlpAF/exec";
 
+const CHANNELS = {
+    main: {
+        key: "main",
+        name: "Main Channel",
+        channelId: "UCBqFKDipsnzvJdt6UT0lMIg",
+        youtubeUrl: "https://www.youtube.com/@SandeepSeminars",
+        videosUrl: "https://www.youtube.com/@SandeepSeminars/videos",
+        subtitle: "Tracking Sandeep Maheshwari in real-time. Catch all deleted and active content right here.",
+        notice: "This tracker has been monitoring Sandeep Maheshwari's channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here."
+    },
+    spirituality: {
+        key: "spirituality",
+        name: "Spirituality Channel",
+        channelId: "UCaEtAfisWDXL3eG8u_M2brA",
+        youtubeUrl: "https://www.youtube.com/@Sandeepmaheshwarispirituality",
+        videosUrl: "https://www.youtube.com/@Sandeepmaheshwarispirituality/videos",
+        subtitle: "Tracking Sandeep Maheshwari Spirituality in real-time. Catch all deleted and active content right here.",
+        notice: "This tracker has been monitoring Sandeep Maheshwari's Spirituality channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here."
+    }
+};
+
+let currentChannel    = "main"; // "main" | "spirituality"
+let currentTab        = "active"; // "active" | "deleted"
 let activeVideosData  = [];
 let deletedVideosData = [];
-let currentTab        = "active"; // "active" | "deleted"
+
+// Cache per channel so toggling channels is instantaneous after initial load
+const channelCache = {
+    main: null,
+    spirituality: null
+};
 
 /* ── Boot ─────────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
     setupThemeToggle();
     setupNavigation();
+    setupChannelSwitcher();
     setupMobileMenu();
     fetchData();
 });
@@ -39,6 +68,44 @@ function setupThemeToggle() {
         icon.className = isLight ? "bx bx-sun" : "bx bx-moon";
         localStorage.setItem("theme", isLight ? "dark" : "light");
     });
+}
+
+/* ── Channel Switcher ─────────────────────────────────────── */
+function setupChannelSwitcher() {
+    const btnMain = document.getElementById("channel-btn-main");
+    const btnSpirituality = document.getElementById("channel-btn-spirituality");
+    if (!btnMain || !btnSpirituality) return;
+
+    btnMain.addEventListener("click", () => switchChannel("main"));
+    btnSpirituality.addEventListener("click", () => switchChannel("spirituality"));
+}
+
+function switchChannel(channelKey) {
+    if (currentChannel === channelKey) return;
+    currentChannel = channelKey;
+
+    const btnMain = document.getElementById("channel-btn-main");
+    const btnSpirituality = document.getElementById("channel-btn-spirituality");
+
+    if (channelKey === "main") {
+        btnMain.classList.add("active");
+        btnMain.setAttribute("aria-selected", "true");
+        btnSpirituality.classList.remove("active");
+        btnSpirituality.setAttribute("aria-selected", "false");
+    } else {
+        btnSpirituality.classList.add("active");
+        btnSpirituality.setAttribute("aria-selected", "true");
+        btnMain.classList.remove("active");
+        btnMain.setAttribute("aria-selected", "false");
+    }
+
+    const subTitle = document.getElementById("hero-subtitle");
+    if (subTitle && CHANNELS[channelKey]) {
+        subTitle.textContent = CHANNELS[channelKey].subtitle;
+    }
+
+    resetSearch();
+    fetchData();
 }
 
 /* ── Desktop Navigation ───────────────────────────────────── */
@@ -143,36 +210,49 @@ async function fetchData() {
     const loading = document.getElementById("loading");
     const grid    = document.getElementById("video-grid");
 
+    // Fast path: use channel cache if already fetched
+    if (channelCache[currentChannel]) {
+        activeVideosData  = channelCache[currentChannel].active;
+        deletedVideosData = channelCache[currentChannel].deleted;
+        loading.style.display = "none";
+        renderStats();
+        renderGrid();
+        return;
+    }
+
     loading.style.display = "flex";
     grid.innerHTML = "";
 
     try {
+        const channelConfig = CHANNELS[currentChannel];
         const [activeRes, deletedRes] = await Promise.all([
-            fetch(`${GOOGLE_SCRIPT_URL}?action=get_active_videos`),
-            fetch(`${GOOGLE_SCRIPT_URL}?action=get_deleted_videos`)
+            fetch(`${GOOGLE_SCRIPT_URL}?action=get_active_videos&channel=${currentChannel}`),
+            fetch(`${GOOGLE_SCRIPT_URL}?action=get_deleted_videos&channel=${currentChannel}`)
         ]);
 
         const activeMap   = await activeRes.json();
-        deletedVideosData = await deletedRes.json();
+        const deletedArr  = await deletedRes.json();
+        deletedVideosData = Array.isArray(deletedArr) ? deletedArr : [];
 
         // Convert active map → array
-        activeVideosData = Object.entries(activeMap)
+        activeVideosData = Object.entries(activeMap || {})
             .map(([id, data]) => ({ ...data, video_id: id }));
 
         // Fetch Live RSS feed for instant updates
         try {
-            const rssUrl = "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent("https://www.youtube.com/feeds/videos.xml?channel_id=UCBqFKDipsnzvJdt6UT0lMIg");
+            const rssUrl = "https://api.rss2json.com/v1/api.json?rss_url=" +
+                encodeURIComponent(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelConfig.channelId}`);
             const rssRes = await fetch(rssUrl);
             const rssData = await rssRes.json();
-            
+
             if (rssData && rssData.items) {
                 rssData.items.forEach(item => {
-                    const videoId = item.link.split("v=")[1];
+                    const videoId = item.link ? item.link.split("v=")[1] : null;
+                    if (!videoId) return;
                     const isDeleted = deletedVideosData.some(v => v.video_id === videoId);
-                    
+
                     if (!activeMap[videoId] && !isDeleted) {
-                        // Instant active video!
-                        const validIso = item.pubDate.replace(" ", "T") + "Z";
+                        const validIso = item.pubDate ? (item.pubDate.replace(" ", "T") + "Z") : "";
                         activeVideosData.push({
                             video_id: videoId,
                             title: item.title,
@@ -196,7 +276,7 @@ async function fetchData() {
                 if (!dstr || dstr === "Unknown" || dstr === "Unknown Date") return 0;
                 let s = String(dstr).trim();
                 if (s.includes("T") && s.endsWith("Z")) return new Date(s).getTime();
-                return new Date(s.replace(/ IST$/i,'')).getTime();
+                return new Date(s.replace(/ IST$/i, '')).getTime();
             };
             return parseDate(b.upload_time) - parseDate(a.upload_time);
         });
@@ -207,10 +287,16 @@ async function fetchData() {
                 if (!dstr || dstr === "Unknown" || dstr === "Unknown Date") return 0;
                 let s = String(dstr).trim();
                 if (s.includes("T") && s.endsWith("Z")) return new Date(s).getTime();
-                return new Date(s.replace(/ IST$/i,'')).getTime();
+                return new Date(s.replace(/ IST$/i, '')).getTime();
             };
             return parseDate(b.deleted_time) - parseDate(a.deleted_time);
         });
+
+        // Cache the processed data
+        channelCache[currentChannel] = {
+            active: activeVideosData,
+            deleted: deletedVideosData
+        };
 
         loading.style.display = "none";
         renderStats();
@@ -291,7 +377,7 @@ function renderGrid() {
         notice.setAttribute("role", "note");
         notice.innerHTML = `
             <i class='bx bx-calendar-check' aria-hidden="true"></i>
-            <span>This tracker has been monitoring Sandeep Maheshwari's channel since <strong>May 2026</strong>. Only deletions detected from that date onwards are listed here.</span>
+            <span>${CHANNELS[currentChannel].notice}</span>
         `;
         grid.appendChild(notice);
     }
@@ -405,7 +491,7 @@ function renderGrid() {
         wrap.className = "view-more-wrap";
         wrap.id = "view-more-wrap";
         wrap.innerHTML = `
-            <a href="https://www.youtube.com/@SandeepSeminars/videos"
+            <a href="${CHANNELS[currentChannel].videosUrl}"
                target="_blank"
                rel="noopener noreferrer"
                class="btn-view-more">
