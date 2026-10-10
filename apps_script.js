@@ -219,6 +219,39 @@ function doGet(e) {
 }
 
 // ==========================================
+// 30-MINUTE DISPATCH TRIGGER
+// ==========================================
+
+function triggerGitHubAction() {
+  var GITHUB_TOKEN = "PASTE_YOUR_GITHUB_TOKEN_HERE";
+  var REPO_OWNER = "siddharthjha214";
+  var REPO_NAME = "smdv";
+  var WORKFLOW_ID = "monitor.yml";
+
+  var url = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/actions/workflows/" + WORKFLOW_ID + "/dispatches";
+
+  var options = {
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer " + GITHUB_TOKEN,
+      "Accept": "application/vnd.github.v3+json"
+    },
+    "payload": JSON.stringify({
+      "ref": "main"
+    }),
+    "muteHttpExceptions": true
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  var code = response.getResponseCode();
+  if (code === 204) {
+    Logger.log("✅ Successfully triggered monitor.yml on GitHub Actions!");
+  } else {
+    Logger.log("❌ Failed to trigger workflow (HTTP " + code + "): " + response.getContentText());
+  }
+}
+
+// ==========================================
 // HELPERS FOR AUTOMATIC SORTING
 // ==========================================
 
